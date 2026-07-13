@@ -1,0 +1,45 @@
+# Attributions & Credits
+
+## Author
+
+**CMDR Mactavious** — creator and maintainer of ED-PLG.
+
+## Software & Libraries
+
+| Project | Role | License / Terms |
+|---------|------|-----------------|
+| [Elite Dangerous Market Connector (EDMC)](https://github.com/EDCD/EDMarketConnector) | Host application and plugin API | [GPL-2.0](https://github.com/EDCD/EDMarketConnector/blob/main/COPYING) |
+| [EDMCModernOverlay](https://github.com/SweetJonnySauce/EDMCModernOverlay) | Optional in-game overlay provider, via its legacy `edmcoverlay` compatibility layer | See project repository |
+| [EDMCOverlay](https://github.com/inorton/EDMCOverlay) | Original overlay plugin; defined the `Overlay.send_message()` API ED-PLG codes against | See project repository |
+| Python Standard Library | Plugin runtime (provided by EDMC) | PSF License |
+| Node.js | Build tooling only (`scripts/build.mjs`) | [MIT](https://github.com/nodejs/node/blob/main/LICENSE) |
+
+ED-PLG is an independent third-party plugin. It is not affiliated with, endorsed
+by, or maintained by the EDMC development team, nor by the overlay plugin authors.
+Neither overlay plugin is bundled or redistributed; ED-PLG imports one if the
+commander has installed it.
+
+The overlay integration pattern (try `EDMCOverlay`, fall back to `edmcoverlay`,
+degrade to a no-op) follows the approach used by
+[BGS-Tally](https://github.com/aussig/BGS-Tally).
+
+## Game & Data References
+
+| Source | Use in ED-PLG |
+|--------|---------------|
+| [Frontier Developments](https://www.frontier.co.uk/) — *Elite Dangerous* | Player Journal events (`Backpack`, `BackpackChange`, `ShipLocker`, `SuitLoadout`, etc.); `Name_Localised` supplies most display names at runtime |
+| [Elite Dangerous Player Journal](https://elite-journal.readthedocs.io/) | Odyssey event schema reference |
+| [EDCD/FDevIDs](https://github.com/EDCD/FDevIDs) — `microresources.csv` | Microresource internal ID → display name mapping (partial) |
+| Community game data | Suit backpack capacities (§7 of the technical specification). These are **not** published in the Player Journal and are not official Frontier data; they are transcribed from in-game suit information and may drift with game updates. |
+
+*Elite Dangerous* and all related marks are trademarks of Frontier Developments plc.
+This plugin is a fan-made tool and is not official Frontier Developments software.
+
+## Community Resources
+
+- [EDMC Plugin Documentation (PLUGINS.md)](https://github.com/EDCD/EDMarketConnector/blob/main/PLUGINS.md)
+- [EDMC Plugin Registry](https://github.com/EDCD/EDMC-Plugin-Registry)
+
+## License
+
+ED-PLG source code is released under the [MIT License](../LICENSE).
