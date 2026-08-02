@@ -254,16 +254,19 @@ expected to enumerate every resource.
 These are inherited from the game and EDMC, not bugs in ED-PLG:
 
 - Backpack inventory may be incomplete if the commander logs in already on foot
-  (no full baseline journal event in some cases).
+  (no full baseline journal event in some cases). ED-PLG cannot fill this gap —
+  EDMC only populates `state['BackPack']` from a fresh `Backpack`/`Resupply`
+  event — but it tracks whether a real baseline has been seen this session
+  (`InventoryTracker.backpack_baseline_seen`) and surfaces "backpack pending
+  first sync" in the panel and inventory window rather than presenting a
+  possibly-stale zero as a confirmed empty backpack.
 - Grenade throws do not emit journal events; consumable counts may drift.
 - EDMC's `BackPack` state is best-effort; ED-PLG reconciles against it after
   each change to stay aligned with core tracking.
 - Backpack capacity is not journal-reported and is hardcoded per suit (§7); it can
-  fall out of date if Frontier rebalances suits.
-- Fleet carrier locker data arrives via CAPI and may lag the live game by 15–30
-  minutes; EDMC fetches it on `CarrierBuy` / `CarrierStats` under a 15-minute throttle.
-- Learned display names live for the session only; they are re-learned from the
-  journal on each login.
+  fall out of date if Frontier rebalances suits. The Flight Suit entry remains
+  unknown — reliable, verifiable capacity figures could not be sourced (see
+  `TODO.md`), and the plugin will not guess.
 
 ## 11. Future Considerations
 

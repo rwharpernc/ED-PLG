@@ -5,7 +5,7 @@
 A lightweight [Elite Dangerous Market Connector](https://github.com/EDCD/EDMarketConnector) (EDMC) plugin for *Elite Dangerous: Odyssey*. ED-PLG tracks on-foot microresources — the components, items, and data you spend on suit and weapon upgrades — and tells you what you just looted, how much of it you now own, and whether you still have room to carry it.
 
 **Author:** CMDR Mactavious  
-**Version:** 0.7.1  
+**Version:** 0.7.2  
 **License:** [MIT](LICENSE)
 
 ---
@@ -81,7 +81,8 @@ Frontier's journal identifies resources by internal ID (`manufacturinginstructio
 
 1. `Name_Localised` from the journal event — the game's own label, correct and localised
 2. A curated override table in [names.py](plugin/names.py)
-3. Names learned from `Name_Localised` earlier in the session
+3. Names learned from `Name_Localised` earlier in this session or a previous one — the
+   learned cache is persisted to EDMC's config and restored on the next launch
 4. A title-cased fallback
 
 Because the game supplies `Name_Localised` for essentially every resource whose label differs from its ID, the curated table rarely needs to grow. It exists to fix the cases the fallback mangles — acronyms like `rdx` → **RDX** — not to enumerate the game.
@@ -260,8 +261,8 @@ See the [Technical Specification](docs/tech-spec.md) for the full API surface, e
 
 Nearly all of these come from the same root cause: **the plugin can only know what the journal tells it.**
 
-- **Backpack capacity is not published by the game** — hence the hardcoded table in `suit.py`. Flight Suit capacity is unknown and renders without a limit.
-- **Backpack contents may be incomplete if you log in already on foot** — the game does not always emit a full baseline in that case.
+- **Backpack capacity is not published by the game** — hence the hardcoded table in `suit.py`. Flight Suit capacity is unknown and renders without a limit; reliable figures could not be sourced (see `TODO.md`), and the plugin won't guess.
+- **Backpack contents may be incomplete if you log in already on foot** — the game does not always emit a full baseline in that case. ED-PLG can't fill the gap, but it does track whether a real baseline has arrived this session and will show "backpack pending first sync" in the panel and inventory window instead of presenting a possibly-stale zero as confirmed.
 - **Some consumable changes have no journal event at all** (throwing a grenade, for instance), so those counts can drift until the next baseline.
 - **Fleet carrier data lags 15–30 minutes** — CAPI, not journal, and throttled.
 - Inventory tracking leans on EDMC's best-effort `BackPack` state; ED-PLG reconciles against it after every change, which corrects drift but inherits any gaps EDMC itself has.

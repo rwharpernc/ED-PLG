@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from typing import Dict, Optional
+
+from config import config
+
+# EDMC config key for names learned in previous sessions.
+CONFIG_LEARNED_NAMES = "edplg_learned_names"
 
 # Upgrade-relevant Odyssey microresources (Component, Item, Data).
 # Extend this dict as new resources are discovered in-game.
@@ -67,8 +73,31 @@ DISPLAY_NAMES: Dict[str, str] = {
 
 
 # Display names learned from Name_Localised at runtime, for resources not listed
-# in DISPLAY_NAMES. Rebuilt each session from the journal.
+# in DISPLAY_NAMES. Seeded from EDMC config at startup (see load_learned_names)
+# and persisted back on shutdown, so the cache survives across sessions.
 _LEARNED_NAMES: Dict[str, str] = {}
+
+
+def load_learned_names() -> None:
+    """Restore names learned in previous sessions from EDMC config."""
+    raw = config.get_str(CONFIG_LEARNED_NAMES)
+    if not raw:
+        return
+
+    try:
+        learned = json.loads(raw)
+    except (TypeError, ValueError):
+        return
+
+    if isinstance(learned, dict):
+        _LEARNED_NAMES.update(
+            (str(key), str(value)) for key, value in learned.items()
+        )
+
+
+def save_learned_names() -> None:
+    """Persist names learned this session to EDMC config."""
+    config.set(CONFIG_LEARNED_NAMES, json.dumps(_LEARNED_NAMES))
 
 
 def canonicalise(name: str) -> str:

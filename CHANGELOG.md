@@ -5,6 +5,28 @@ All notable changes to ED-PLG are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-08-02
+
+### Added
+
+- **Learned display names persist across sessions.** Names learned from
+  `Name_Localised` (for resources not in the curated `DISPLAY_NAMES` table) are
+  now saved to EDMC's config on shutdown and restored on the next launch,
+  instead of being rebuilt from scratch every session.
+- **"Backpack pending first sync" indicator.** EDMC only populates backpack
+  state from a fresh `Backpack`/`Resupply` journal event, so a commander who
+  logs in already on foot can see a zeroed-out backpack that isn't actually
+  empty. ED-PLG now tracks whether a real baseline has been received this
+  session and says so — in the panel status line and as a note on the
+  Backpack tab of the inventory window — rather than presenting that zero as
+  confirmed.
+
+### Notes
+
+- Flight Suit backpack capacity remains unknown. Reliable, verifiable figures
+  could not be sourced during this pass; see `TODO.md`. The plugin continues
+  to show a bare count with no capacity bar for it rather than guess.
+
 ## [0.7.1] - 2026-07-13
 
 ### Fixed
@@ -80,6 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ship engineering materials (`Materials` event: Raw, Manufactured, Encoded) are
   intentionally excluded; this plugin focuses on Odyssey ground gear upgrades only.
 
+[0.7.2]: #072---2026-08-02
 [0.7.1]: #071---2026-07-13
 [0.7.0]: #070---2026-07-13
 [0.5.0]: #050---2025-06-30

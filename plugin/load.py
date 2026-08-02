@@ -21,6 +21,7 @@ from . import __version__
 from .inventory import InventoryTracker, TRACKED_CATEGORIES
 from .overlay import PillageOverlay
 from .suit import SuitState
+from . import names
 from . import ui
 from . import window
 
@@ -49,6 +50,7 @@ _ui_frame: Optional[tk.Frame] = None
 def plugin_start3(plugin_dir: str) -> str:
     """Load ED-PLG into EDMarketConnector."""
     logger.info("ED-PLG v%s starting from %s", __version__, plugin_dir)
+    names.load_learned_names()
     _overlay.set_enabled(ui.overlay_enabled())
     if not _overlay.available:
         logger.info("No overlay plugin found; pillage overlay disabled")
@@ -57,6 +59,7 @@ def plugin_start3(plugin_dir: str) -> str:
 
 def plugin_stop() -> None:
     """EDMarketConnector is closing."""
+    names.save_learned_names()
     _overlay.clear()
     window.close()
     logger.info("ED-PLG shutting down")
@@ -206,6 +209,14 @@ def _on_commander_session(cmdr: str, state: Dict[str, Any], *, reason: str) -> N
     switched = _tracker.set_commander(cmdr)
     _tracker.sync_all_from_state(state)
 
+    # EDMC only (re)populates the backpack from a fresh Backpack/Resupply event,
+    # and clears it on LoadGame. A commander already on foot when EDMC attaches
+    # may not get one of those for a while, so say so rather than presenting the
+    # zeroed-out backpack as a confirmed empty one.
+    pending_note = (
+        "" if _tracker.backpack_baseline_seen else " (backpack pending first sync)"
+    )
+
     if switched:
         logger.info(
             "Commander switched to %s; journal inventory synced (%s)",
@@ -215,13 +226,13 @@ def _on_commander_session(cmdr: str, state: Dict[str, Any], *, reason: str) -> N
         if _tracker.fleet_carrier_callsign:
             ui.set_status(
                 f"{cmdr}: inventory synced "
-                f"(carrier {_tracker.fleet_carrier_callsign} cached)",
+                f"(carrier {_tracker.fleet_carrier_callsign} cached){pending_note}",
             )
         else:
-            ui.set_status(f"{cmdr}: inventory synced (no carrier data yet)")
+            ui.set_status(f"{cmdr}: inventory synced (no carrier data yet){pending_note}")
     else:
         logger.info("Inventory baseline synced from EDMC state (%s)", reason)
-        ui.set_status("Inventory synced")
+        ui.set_status(f"Inventory synced{pending_note}")
 
 
 def _handle_backpack_change(

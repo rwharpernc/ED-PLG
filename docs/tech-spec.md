@@ -211,7 +211,15 @@ class InventoryTracker:
     def set_commander(cmdr) -> bool
     def get_combined_total(internal_name, category) -> int
     def snapshot() -> Dict[str, InventoryStore]
+    @property backpack_baseline_seen -> bool
 ```
+
+`backpack_baseline_seen` is `True` once a real `Backpack`/`Resupply` event has
+been applied this session, and is reset to `False` on `LoadGame`/`Start`
+(`sync_all_from_state`), matching when EDMC itself clears `state['BackPack']`.
+Callers (`load.py`, `window.py`) use it to distinguish "confirmed empty
+backpack" from "no baseline received yet" — see
+[Design Specification §10](./design-spec.md#10-known-limitations).
 
 `apply_backpack_change` yields `(display_label, internal_name, delta, backpack_total)`
 for each **Added** tracked item.
@@ -301,14 +309,21 @@ dark, darkened when light — rather than hardcoded, so it holds up in both them
 
 ```python
 DISPLAY_NAMES: Dict[str, str]   # canonical_id → display label (curated)
-_LEARNED_NAMES: Dict[str, str]  # canonical_id → Name_Localised seen this session
+_LEARNED_NAMES: Dict[str, str]  # canonical_id → Name_Localised, persisted across sessions
 canonicalise(name: str) -> str
 remember(internal_name, localised_name) -> None
 display_name(internal_name, localised_name=None) -> str
+load_learned_names() -> None    # seed _LEARNED_NAMES from EDMC config (plugin_start3)
+save_learned_names() -> None    # persist _LEARNED_NAMES to EDMC config (plugin_stop)
 ```
 
 Resolution order: explicit `localised_name` → `DISPLAY_NAMES` → `_LEARNED_NAMES` →
 title-cased fallback. `remember()` ignores unresolved `$Token;` placeholders.
+
+`_LEARNED_NAMES` is persisted as JSON under the `edplg_learned_names` config key,
+loaded once in `plugin_start3` and saved once in `plugin_stop` — the same
+load-once/save-on-close pattern `window.py` uses for geometry, rather than
+writing on every `remember()` call.
 
 Canonicalisation: `name.lower().replace(" ", "")` — matches EDMC monitor.
 

@@ -36,10 +36,24 @@ class InventoryTracker:
         self._fleet_carrier_callsign: Optional[str] = None
         self._commander: Optional[str] = None
         self._carrier_cache: Dict[str, CarrierCacheEntry] = {}
+        self._backpack_baseline_seen: bool = False
 
     @property
     def commander(self) -> Optional[str]:
         return self._commander
+
+    @property
+    def backpack_baseline_seen(self) -> bool:
+        """
+        Whether a real Backpack/Resupply baseline has been received this session.
+
+        EDMC only populates state['BackPack'] in response to a Backpack/Resupply
+        journal event, and clears it on LoadGame. A commander who logs in already
+        on foot may not get a fresh Backpack event for a while, during which the
+        backpack reads as empty without this actually meaning "empty" — see the
+        README's Known Limitations.
+        """
+        return self._backpack_baseline_seen
 
     @property
     def backpack(self) -> InventoryStore:
@@ -68,6 +82,9 @@ class InventoryTracker:
 
     def sync_all_from_state(self, state: Mapping[str, Any]) -> None:
         """Synchronise both backpack and ship locker from EDMC state."""
+        # EDMC clears state['BackPack'] on LoadGame too, so the baseline flag
+        # resets in lockstep with the data it describes.
+        self._backpack_baseline_seen = False
         self.sync_backpack_from_state(state)
         self.sync_ship_locker_from_state(state)
 
@@ -93,6 +110,7 @@ class InventoryTracker:
     def apply_backpack_baseline(self, entry: Mapping[str, Any]) -> None:
         """Apply a Backpack / Resupply journal entry or Backpack.json payload."""
         self._backpack = self._store_from_journal_sections(entry)
+        self._backpack_baseline_seen = True
 
     def apply_ship_locker_baseline(self, entry: Mapping[str, Any]) -> None:
         """Apply a ShipLocker journal entry or ShipLocker.json payload."""

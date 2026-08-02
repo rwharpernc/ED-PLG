@@ -236,8 +236,18 @@ class InventoryWindow:
             "fleet_carrier_locker": {},
         }
 
+        # No fresh Backpack/Resupply event yet this session — commonly hit when
+        # logging in already on foot. The counts below may be stale or zero
+        # rather than a confirmed empty backpack; say so instead of guessing.
+        backpack_note = (
+            None
+            if self._tracker.backpack_baseline_seen
+            else "Not yet synced this session — loot, resupply, or disembark to refresh."
+        )
+        notes = {"backpack": backpack_note, "ship_locker": None, "fleet_carrier_locker": None}
+
         for key, tab in self._tabs.items():
-            tab.update(snapshot.get(key, {}), capacities[key])
+            tab.update(snapshot.get(key, {}), capacities[key], note=notes[key])
 
     def close(self) -> None:
         if self.alive:
@@ -262,6 +272,9 @@ class _LocationTab:
         except Exception:
             logger.debug("Could not bold the tab heading", exc_info=True)
         title.pack(fill=tk.X, padx=10, pady=(10, 8))
+
+        self._note = ttk.Label(self.frame, text="", anchor=tk.W, foreground="#c07000")
+        self._note.pack(fill=tk.X, padx=10, pady=(0, 4))
 
         summary = ttk.Frame(self.frame)
         summary.pack(fill=tk.X, padx=10, pady=(0, 10))
@@ -309,7 +322,15 @@ class _LocationTab:
         self._tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-    def update(self, store: Mapping[str, Mapping[str, int]], capacities: Mapping[str, int]) -> None:
+    def update(
+        self,
+        store: Mapping[str, Mapping[str, int]],
+        capacities: Mapping[str, int],
+        *,
+        note: Optional[str] = None,
+    ) -> None:
+        self._note["text"] = note or ""
+
         for category in TRACKED_CATEGORIES:
             items = store.get(category, {})
             total = sum(items.values())
