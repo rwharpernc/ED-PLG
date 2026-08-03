@@ -1,7 +1,7 @@
 {
   "name": "ed-plg",
   "private": true,
-  "version": "0.8.0-beta.1",
+  "version": "0.8.0-beta.2",
   "description": "Elite Dangerous Pillage Ledger & Gear-tracker \u2014 EDMC plugin",
   "scripts": {
     "build": "node scripts/build.mjs"

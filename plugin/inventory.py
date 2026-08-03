@@ -10,6 +10,19 @@ from .names import canonicalise, display_name, remember
 # Categories tracked for suit/weapon upgrade assets.
 TRACKED_CATEGORIES: Tuple[str, ...] = ("Component", "Item", "Data")
 
+# Short in-game wording per category, e.g. for warning/status messages.
+CATEGORY_SHORT: Dict[str, str] = {
+    "Component": "Assets",
+    "Item": "Goods",
+    "Data": "Data",
+}
+
+# Ship locker holds up to 1000 of each category.
+SHIP_LOCKER_CAPACITY: Dict[str, int] = {category: 1000 for category in TRACKED_CATEGORIES}
+
+# Fraction of SHIP_LOCKER_CAPACITY at which ship_locker_capacity_warnings() fires.
+WARNING_THRESHOLD = 0.9
+
 # CAPI /fleetcarrier carrierLocker keys → journal microresource categories.
 # Frontier labels locker sections assets/goods/data; journal uses Component/Item/Data.
 CARRIER_LOCKER_CATEGORY_MAP: Dict[str, str] = {
@@ -37,6 +50,7 @@ class InventoryTracker:
         self._commander: Optional[str] = None
         self._carrier_cache: Dict[str, CarrierCacheEntry] = {}
         self._backpack_baseline_seen: bool = False
+        self._locker_capacity_warned: set = set()
 
     @property
     def commander(self) -> Optional[str]:
@@ -87,6 +101,30 @@ class InventoryTracker:
         self._backpack_baseline_seen = False
         self.sync_backpack_from_state(state)
         self.sync_ship_locker_from_state(state)
+
+    def ship_locker_capacity_warnings(self) -> List[Tuple[str, int, int]]:
+        """
+        Categories that have just crossed WARNING_THRESHOLD of ship locker capacity.
+
+        A category only yields once per crossing: it won't repeat on
+        subsequent calls while still over threshold, but rearms (can warn
+        again) once it drops back under threshold and later crosses again —
+        e.g. after offloading via a ship or an Apex shuttle mid-mission.
+        """
+        warnings = []
+
+        for category in TRACKED_CATEGORIES:
+            capacity = SHIP_LOCKER_CAPACITY[category]
+            total = sum(self._ship_locker.get(category, {}).values())
+            over_threshold = total >= capacity * WARNING_THRESHOLD
+
+            if over_threshold and category not in self._locker_capacity_warned:
+                self._locker_capacity_warned.add(category)
+                warnings.append((category, total, capacity))
+            elif not over_threshold:
+                self._locker_capacity_warned.discard(category)
+
+        return warnings
 
     def set_commander(self, cmdr: str) -> bool:
         """

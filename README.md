@@ -5,7 +5,7 @@
 A lightweight [Elite Dangerous Market Connector](https://github.com/EDCD/EDMarketConnector) (EDMC) plugin for *Elite Dangerous: Odyssey*. ED-PLG tracks on-foot microresources — the components, items, and data you spend on suit and weapon upgrades — and tells you what you just looted, how much of it you now own, and whether you still have room to carry it.
 
 **Author:** CMDR Mactavious  
-**Version:** 0.7.2  
+**Version:** 0.8.0-beta.2  
 **License:** [MIT](LICENSE)
 
 ---
@@ -24,6 +24,7 @@ That total is the number that matters when you are deciding whether a pickup is 
 - **Pillage notifications** on every pickup, with your new combined total
 - **In-game overlay alerts** via [EDMCModernOverlay](https://github.com/SweetJonnySauce/EDMCModernOverlay) (optional — the plugin works fine without it)
 - **Inventory window** — a tabbed view of everything you hold, with capacity bars per category, so you can see at a glance how close your backpack is to full
+- **Ship locker capacity warning** — an in-game overlay alert when a ship locker category hits 90% full, so you're not caught having to drop loot before you can offload it (at your ship, or remotely via an Apex shuttle)
 - **Real names** for Frontier's internal resource IDs (`manufacturinginstructions` → *Manufacturing Instructions*)
 
 **Deliberately out of scope:** ship engineering materials (Raw, Manufactured, Encoded) and commodity cargo. Those are separate game systems. ED-PLG deals only in Odyssey microresources — the stuff that upgrades your ground gear.
@@ -105,6 +106,12 @@ Because engineering grade isn't visible to the plugin, and the Flight Suit has n
 ### Fleet carrier data is late
 
 Carrier locker contents do not appear in the journal at all. They come from Frontier's CAPI, which EDMC fetches on carrier events with a 15-minute throttle — so **carrier figures can lag the live game by 15–30 minutes**. Treat them as a recent snapshot, not a live readout. Data is cached per commander, so switching accounts never bleeds counts between CMDRs.
+
+### Ship locker capacity warning
+
+The ship locker caps at 1000 per category. Fill one while out looting and you can be forced to drop items rather than store them — whether you're offloading at your own ship, or remotely via an Apex shuttle's "Manage Items" screen (which isn't separate storage — it's a proxy into the same locker your ship uses).
+
+When a category (Assets, Goods, or Data) reaches 90% of capacity (900/1000), ED-PLG sends a red, longer-lived overlay warning distinct from ordinary pillage notifications, and logs it. It won't repeat while you stay over 90%, but it rearms — so if you offload and later refill past 90% again, you'll get warned again. Requires the in-game overlay to be installed and enabled; it also always logs to `EDMarketConnector.log` either way.
 
 ## Requirements
 
@@ -266,7 +273,7 @@ Nearly all of these come from the same root cause: **the plugin can only know wh
 - **Fleet carrier data lags 15–30 minutes** — CAPI, not journal, and throttled.
 - Inventory tracking leans on EDMC's best-effort `BackPack` state; ED-PLG reconciles against it after every change, which corrects drift but inherits any gaps EDMC itself has.
 
-See [Design Specification — Known Limitations](docs/design-spec.md#10-known-limitations) for the detail.
+See [Design Specification — Known Limitations](docs/design-spec.md#11-known-limitations) for the detail.
 
 ## Documentation
 

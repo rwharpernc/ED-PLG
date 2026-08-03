@@ -18,7 +18,7 @@ from companion import CAPIData
 from config import appname
 
 from . import __version__
-from .inventory import InventoryTracker, TRACKED_CATEGORIES
+from .inventory import CATEGORY_SHORT, InventoryTracker, TRACKED_CATEGORIES
 from .overlay import PillageOverlay
 from .suit import SuitState
 from . import names
@@ -28,6 +28,12 @@ from . import window
 
 plugin_name = os.path.basename(os.path.dirname(__file__))
 logger = logging.getLogger(f"{appname}.{plugin_name}")
+
+# Ship locker capacity warning: distinct from pillage lines, so it gets its
+# own colour and a longer TTL — missing it can mean being forced to drop
+# loot rather than just missing a pickup notification.
+LOCKER_WARNING_COLOUR = "#ff3030"
+LOCKER_WARNING_TTL = 20
 
 if not logger.hasHandlers():
     level = logging.INFO
@@ -129,6 +135,7 @@ def _dispatch(
         _tracker.sync_ship_locker_from_state(state)
         logger.debug("Ship locker baseline synced")
         ui.set_status("Ship locker synced")
+        _warn_ship_locker_capacity()
         return None
 
     if event in ("SuitLoadout", "SwitchSuitLoadout"):
@@ -211,6 +218,7 @@ def capi_fleetcarrier(data: CAPIData) -> Optional[str]:
 def _on_commander_session(cmdr: str, state: Dict[str, Any], *, reason: str) -> None:
     switched = _tracker.set_commander(cmdr)
     _tracker.sync_all_from_state(state)
+    _warn_ship_locker_capacity()
 
     # EDMC only (re)populates the backpack from a fresh Backpack/Resupply event,
     # and clears it on LoadGame. A commander already on foot when EDMC attaches
@@ -236,6 +244,28 @@ def _on_commander_session(cmdr: str, state: Dict[str, Any], *, reason: str) -> N
     else:
         logger.info("Inventory baseline synced from EDMC state (%s)", reason)
         ui.set_status(f"Inventory synced{pending_note}")
+
+
+def _warn_ship_locker_capacity() -> None:
+    """
+    Warn (log + overlay) for any ship locker category that just crossed
+    InventoryTracker.WARNING_THRESHOLD of its capacity.
+
+    Ship locker updates the same way whether a commander transfers items at
+    their own ship or remotely via an Apex shuttle's "Manage Items" screen —
+    both write through the same ShipLocker journal event this is called
+    from — so no separate Apex-specific handling is needed.
+    """
+    for category, total, capacity in _tracker.ship_locker_capacity_warnings():
+        label = CATEGORY_SHORT[category]
+        message = f"⚠ Ship Locker {label}: {total}/{capacity} — nearing capacity"
+        logger.warning(message)
+        _overlay.notify(
+            f"__locker_full_{category}",
+            message,
+            colour=LOCKER_WARNING_COLOUR,
+            ttl=LOCKER_WARNING_TTL,
+        )
 
 
 def _handle_backpack_change(

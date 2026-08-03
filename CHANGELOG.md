@@ -5,6 +5,21 @@ All notable changes to ED-PLG are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0-beta.2] - 2026-08-03
+
+### Added
+
+- **Ship locker capacity warning.** Filling a ship locker category (1000
+  cap) while out looting can force dropping items rather than storing
+  them — whether offloading at your own ship or remotely via an Apex
+  shuttle's "Manage Items" screen (confirmed to be a proxy into the same
+  locker, not separate storage, so no special-casing was needed for it).
+  ED-PLG now sends a distinct, longer-lived red overlay warning — and
+  logs it regardless of overlay availability — when a category (Assets,
+  Goods, or Data) crosses 90% of capacity. It won't repeat while still
+  over threshold, but rearms after dropping back under 90% so a later
+  refill warns again.
+
 ## [0.8.0-beta.1] - 2026-08-03
 
 ### Added

@@ -12,7 +12,7 @@ from typing import Dict, Mapping, Optional
 from config import appname, config
 from theme import theme
 
-from .inventory import InventoryTracker, TRACKED_CATEGORIES
+from .inventory import SHIP_LOCKER_CAPACITY, InventoryTracker, TRACKED_CATEGORIES
 from .names import display_name
 from .suit import SuitState
 
@@ -20,9 +20,6 @@ plugin_name = os.path.basename(os.path.dirname(__file__))
 logger = logging.getLogger(f"{appname}.{plugin_name}")
 
 CONFIG_GEOMETRY = "edplg_window_geometry"
-
-# Ship locker holds up to 1000 of each category.
-SHIP_LOCKER_CAPACITY: Dict[str, int] = {category: 1000 for category in TRACKED_CATEGORIES}
 
 # Journal category -> in-game wording.
 CATEGORY_LABELS: Dict[str, str] = {

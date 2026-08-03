@@ -40,8 +40,8 @@ class PillageOverlay:
     def __init__(self) -> None:
         self._client: Optional[Any] = None
         self._enabled = True
-        # (internal_name, text, expiry) — newest first.
-        self._lines: List[Tuple[str, str, float]] = []
+        # (internal_name, text, expiry, colour) — newest first.
+        self._lines: List[Tuple[str, str, float, str]] = []
         self._rendered_rows = 0
 
     @property
@@ -53,8 +53,21 @@ class PillageOverlay:
             self.clear()
         self._enabled = enabled
 
-    def notify(self, internal_name: str, text: str) -> None:
-        """Push a pillage line, replacing any live line for the same item."""
+    def notify(
+        self,
+        internal_name: str,
+        text: str,
+        *,
+        colour: str = COLOUR,
+        ttl: int = TTL_SECONDS,
+    ) -> None:
+        """
+        Push a line, replacing any live line keyed by the same internal_name.
+
+        Pillage notifications key on the resource's internal name; other
+        callers (e.g. ship locker capacity warnings) use their own distinct
+        key so they don't collide with or get replaced by item pickups.
+        """
         if not self._enabled:
             return
 
@@ -64,7 +77,7 @@ class PillageOverlay:
 
         now = time.monotonic()
         self._lines = [line for line in self._lines if line[0] != internal_name]
-        self._lines.insert(0, (internal_name, text, now + TTL_SECONDS))
+        self._lines.insert(0, (internal_name, text, now + ttl, colour))
         self._prune(now)
         self._render(client, now)
 
@@ -81,9 +94,9 @@ class PillageOverlay:
         self._lines = [line for line in self._lines if line[2] > now][:MAX_LINES]
 
     def _render(self, client: Any, now: float) -> None:
-        for row, (_name, text, expiry) in enumerate(self._lines):
+        for row, (_name, text, expiry, colour) in enumerate(self._lines):
             ttl = max(1, int(round(expiry - now)))
-            self._send(client, row, text, ttl=ttl)
+            self._send(client, row, text, ttl=ttl, colour=colour)
 
         # Blank any rows left over from a previous, taller render.
         for row in range(len(self._lines), self._rendered_rows):
@@ -91,12 +104,12 @@ class PillageOverlay:
 
         self._rendered_rows = len(self._lines)
 
-    def _send(self, client: Any, row: int, text: str, *, ttl: int) -> None:
+    def _send(self, client: Any, row: int, text: str, *, ttl: int, colour: str = COLOUR) -> None:
         try:
             client.send_message(
                 f"{ID_PREFIX}{row}",
                 text,
-                COLOUR,
+                colour,
                 ORIGIN_X,
                 ORIGIN_Y + row * LINE_HEIGHT,
                 ttl=ttl,

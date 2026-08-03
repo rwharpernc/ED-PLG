@@ -13,19 +13,12 @@ from config import appname, config
 from theme import theme
 
 from . import suit
-from .inventory import TRACKED_CATEGORIES
+from .inventory import CATEGORY_SHORT, TRACKED_CATEGORIES
 
 plugin_name = os.path.basename(os.path.dirname(__file__))
 logger = logging.getLogger(f"{appname}.{plugin_name}")
 
 CONFIG_OVERLAY_ENABLED = "edplg_overlay_enabled"
-
-# Journal category -> short in-game wording, for the capacity override rows.
-CATEGORY_SHORT: Dict[str, str] = {
-    "Component": "Assets",
-    "Item": "Goods",
-    "Data": "Data",
-}
 
 _frame: Optional[tk.Frame] = None
 _status_label: Optional[tk.Label] = None

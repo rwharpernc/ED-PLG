@@ -136,6 +136,7 @@ Window geometry is persisted between sessions in EDMC's config.
 | FR-10 | Send an overlay notification per pickup when an overlay provider is installed, and degrade silently when it is not. |
 | FR-11 | Present backpack, ship locker, and carrier locker contents on demand, with per-category totals against capacity. |
 | FR-12 | Never display a guessed capacity; show a bare count when the figure is unknown. |
+| FR-13 | Warn (log + overlay) when a ship locker category crosses 90% of capacity, independently per category. |
 
 ## 5. Data Model
 
@@ -231,7 +232,28 @@ category, tracked per owned suit loadout (keyed by the journal's
 hardcoded default, so a later correction to the table isn't silently masked
 by a stale override left over from before.
 
-## 8. Name Resolution Strategy
+## 8. Ship Locker Capacity Warning
+
+The ship locker caps at 1000 per category (Assets/Goods/Data). Filling a
+category while out looting can force a commander to drop items rather than
+store them — either at their own ship, or via an Apex shuttle's remote
+"Manage Items" access, which is not a separate storage pool but a proxy
+into the same locker (and therefore the same `ShipLocker` journal event
+this plugin already tracks — no separate handling is needed for it).
+
+Design rules:
+
+- Warn at 90% of capacity per category (900/1000), independently per
+  category.
+- A category warns once per crossing: it does not repeat on every
+  subsequent sync while still over threshold, but rearms once it drops
+  back under 90% (e.g. after offloading) and later crosses again.
+- Surfaced via the in-game overlay (distinct colour/TTL from pillage
+  notifications, so it reads as a different class of message) and logged,
+  so it's visible even without an overlay provider installed — consistent
+  with FR-10's silent degradation.
+
+## 9. Name Resolution Strategy
 
 Display names are resolved in priority order:
 
@@ -251,7 +273,7 @@ The static table therefore serves two narrow purposes: overriding the game's lab
 and fixing acronyms the title-case fallback mangles (`rdx` → `RDX`). It is not
 expected to enumerate every resource.
 
-## 9. Non-Functional Requirements
+## 10. Non-Functional Requirements
 
 | Attribute | Target |
 |-----------|--------|
@@ -262,7 +284,7 @@ expected to enumerate every resource.
 | Maintainability | Modular layout: `load`, `inventory`, `suit`, `overlay`, `window`, `names`, `ui`. |
 | Portability | Pure Python plugin; build produces a copy-ready folder. |
 
-## 10. Known Limitations
+## 11. Known Limitations
 
 These are inherited from the game and EDMC, not bugs in ED-PLG:
 
@@ -282,7 +304,7 @@ These are inherited from the game and EDMC, not bugs in ED-PLG:
   Suit has no hardcoded entry at all. A commander can correct any of this
   per owned suit loadout from the Settings tab rather than editing `suit.py`.
 
-## 11. Future Considerations
+## 12. Future Considerations
 
 Possible enhancements (not committed for v0.7.0):
 
@@ -292,7 +314,7 @@ Possible enhancements (not committed for v0.7.0):
 - Import full microresource name table from FDevIDs at build time.
 - Preferences for filtering tracked categories and overlay position.
 
-## 12. References
+## 13. References
 
 - [Technical Specification](./tech-spec.md)
 - [Attributions & Credits](./ATTRIBUTIONS.md)

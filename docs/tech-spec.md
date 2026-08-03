@@ -110,11 +110,11 @@ Log destination: `%TEMP%\EDMarketConnector.log` (Windows).
 
 | Event | Handler behaviour |
 |-------|-------------------|
-| `LoadGame` | Full baseline sync from `state` (backpack + ship locker); set commander. |
+| `LoadGame` | Full baseline sync from `state` (backpack + ship locker); set commander; check ship locker capacity warnings. |
 | `Start` | Same as `LoadGame` (EDMC started while game running). |
 | `Backpack` | Parse journal/JSON baseline; sync backpack from `state`. |
 | `Resupply` | Same handler as `Backpack`. |
-| `ShipLocker` | Parse locker baseline; sync ship locker from `state`. |
+| `ShipLocker` | Parse locker baseline; sync ship locker from `state`; check ship locker capacity warnings (see §8). |
 | `SuitLoadout` | Record suit + mods; sync backpack from `state` (disembark / on-foot start). |
 | `SwitchSuitLoadout` | Same handler as `SuitLoadout`. |
 | `BackpackChange` | Apply deltas; log pillage, update panel, and send overlay for `Added` items. |
@@ -210,6 +210,7 @@ class InventoryTracker:
     def clear_fleet_carrier_for_commander(cmdr) -> None
     def set_commander(cmdr) -> bool
     def get_combined_total(internal_name, category) -> int
+    def ship_locker_capacity_warnings() -> List[Tuple[str, int, int]]
     def snapshot() -> Dict[str, InventoryStore]
     @property backpack_baseline_seen -> bool
 ```
@@ -219,7 +220,7 @@ been applied this session, and is reset to `False` on `LoadGame`/`Start`
 (`sync_all_from_state`), matching when EDMC itself clears `state['BackPack']`.
 Callers (`load.py`, `window.py`) use it to distinguish "confirmed empty
 backpack" from "no baseline received yet" — see
-[Design Specification §10](./design-spec.md#10-known-limitations).
+[Design Specification §11](./design-spec.md#11-known-limitations).
 
 `apply_backpack_change` yields `(display_label, internal_name, delta, backpack_total)`
 for each **Added** tracked item.
@@ -267,7 +268,7 @@ the override mechanism.
 class PillageOverlay:
     @property available -> bool          # an overlay module was importable
     def set_enabled(enabled: bool) -> None
-    def notify(internal_name: str, text: str) -> None
+    def notify(internal_name: str, text: str, *, colour: str = COLOUR, ttl: int = TTL_SECONDS) -> None
     def clear() -> None
 ```
 
@@ -275,13 +276,18 @@ class PillageOverlay:
 |----------|-------|---------|
 | `ID_PREFIX` | `edplg-pillage-` | Message IDs; groupable in ModernOverlay |
 | `MAX_LINES` | 5 | Stack depth |
-| `TTL_SECONDS` | 8 | Per-line lifetime |
+| `TTL_SECONDS` | 8 | Default per-line lifetime |
+| `COLOUR` | `#ffbf00` | Default (pillage) line colour |
 | `ORIGIN_X` / `ORIGIN_Y` | 900 / 120 | Legacy 1280×960 virtual screen |
 | `LINE_HEIGHT` | 18 | Row spacing |
 
 Behaviour: the client is created lazily on first `notify()`. Lines are held as
-`(internal_name, text, expiry)`, newest first; a repeat pickup of the same resource
-replaces its line rather than appending. Rows vacated by expiry are blanked by
+`(internal_name, text, expiry, colour)`, newest first; a call with an
+`internal_name` matching a live line replaces it rather than appending — pillage
+calls key on the resource's internal name, other callers (e.g. the ship locker
+capacity warning, §8) use their own distinct key so they don't collide with item
+pickups. `colour`/`ttl` default to the pillage look; callers pass their own to
+render a visually distinct message. Rows vacated by expiry are blanked by
 sending empty text (the legacy clear idiom). Any exception from the overlay client
 disables the feature for the session rather than propagating into `journal_entry`.
 
@@ -445,7 +451,38 @@ Other capacities:
 Commodity cargo tonnage is a different game system and is deliberately absent from
 the plugin.
 
-## 8. Build System
+## 8. Ship Locker Capacity Warning
+
+`InventoryTracker.ship_locker_capacity_warnings()` compares each tracked
+category's ship locker total against `SHIP_LOCKER_CAPACITY[category] *
+WARNING_THRESHOLD` (0.9, i.e. 900/1000):
+
+- Crossing at/over threshold, not already warned this "episode" → yields
+  `(category, total, capacity)` and marks the category warned.
+- Dropping back under threshold → clears the warned mark, rearming a future
+  crossing (e.g. after offloading via a ship or an Apex shuttle).
+- Already warned and still over threshold → yields nothing (no repeat spam).
+
+Called from `load.py` after every ship locker sync — the `ShipLocker` event
+branch and `_on_commander_session` (covers `LoadGame`/`Start`) — via a
+`_warn_ship_locker_capacity()` helper that logs each warning
+(`logger.warning`) and sends it to the overlay:
+
+```python
+_overlay.notify(
+    f"__locker_full_{category}",
+    f"⚠ Ship Locker {label}: {total}/{capacity} — nearing capacity",
+    colour=LOCKER_WARNING_COLOUR,  # "#ff3030", distinct from pillage amber
+    ttl=LOCKER_WARNING_TTL,        # 20s, longer than a pillage line's 8s
+)
+```
+
+An Apex shuttle's "Manage Items" screen is a remote proxy into the same ship
+locker a commander's own ship uses — not a separate storage pool — so it
+updates through the same `ShipLocker` journal event this already hooks; no
+Apex-specific handling exists or is needed.
+
+## 9. Build System
 
 ```bash
 npm run build
@@ -467,7 +504,7 @@ No transpilation or bundling — EDMC loads Python source directly.
 
 Copy the entire `dist/EDPLG` folder. Restart EDMC.
 
-## 9. Versioning
+## 10. Versioning
 
 Semantic versioning in:
 
@@ -476,7 +513,7 @@ Semantic versioning in:
 
 EDMC reads `__version__` if present for plugin registry compatibility.
 
-## 10. Testing Checklist
+## 11. Testing Checklist
 
 Manual verification steps for releases:
 
@@ -493,14 +530,18 @@ Manual verification steps for releases:
 8. Confirm resources absent from `DISPLAY_NAMES` still show proper names (learned
    from `Name_Localised`) rather than title-cased IDs.
 9. Board ship and transfer items; confirm ship locker sync on `ShipLocker`.
-10. Disable the overlay in settings; confirm no further overlay lines are drawn.
-11. Verify log entries in `%TEMP%\EDMarketConnector.log`.
+10. Fill a ship locker category to 900+/1000 (or lower `WARNING_THRESHOLD`
+    temporarily for testing); confirm one red overlay warning appears and it
+    does not repeat on further syncs while still over threshold. Offload
+    below 900, then refill past it; confirm it warns again.
+11. Disable the overlay in settings; confirm no further overlay lines are drawn.
+12. Verify log entries in `%TEMP%\EDMarketConnector.log`.
 
 Non-game verification: `suit.py`, `names.py`, `inventory.py`, `overlay.py`, and
 `window.py` can be exercised outside EDMC by stubbing the `config` and `theme`
 modules in `sys.modules` and replaying real journal lines through the tracker.
 
-## 11. Dependencies
+## 12. Dependencies
 
 | Dependency | Required for | Notes |
 |------------|--------------|-------|
@@ -510,7 +551,7 @@ modules in `sys.modules` and replaying real journal lines through the tracker.
 
 No pip dependencies. Plugin uses only Python stdlib + EDMC-provided modules.
 
-## 12. References
+## 13. References
 
 - [Design Specification](./design-spec.md)
 - [Attributions & Credits](./ATTRIBUTIONS.md)
