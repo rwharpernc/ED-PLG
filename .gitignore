@@ -31,3 +31,7 @@ desktop.ini
 *.log
 .env
 .env.*
+
+# AI assistant local config/context (kept locally, not tracked)
+.claude/
+CLAUDE.md
