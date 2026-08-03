@@ -244,13 +244,22 @@ SUIT_DISPLAY_NAMES: Dict[str, str]              # suit key → "Maverick Suit"
 CAPACITIES: Dict[str, Optional[SuitCapacities]] # suit key → {"base": {...}, "modded": {...}}
 
 class SuitState:
-    def apply_suit_loadout(entry) -> None
-    def capacities() -> Dict[str, int]   # {} when unknown
+    def apply_suit_loadout(entry, cmdr=None) -> None
+    def capacities(cmdr=None) -> Dict[str, int]   # {} when unknown; merges overrides for cmdr
     @property known / has_capacity_mod / display_name
+
+def default_capacity(suit_key, has_capacity_mod) -> Dict[str, int]
+def known_loadouts_for(cmdr) -> Dict[str, dict]
+def record_loadout(cmdr, loadout_id, *, name, suit_key, grade, has_capacity_mod) -> None
+def set_override(cmdr, loadout_id, category, value) -> None   # value=None clears
+def load_overrides() -> None
+def save_overrides() -> None
 ```
 
-`capacities()` returns an empty dict for suits with no table entry. Callers must
-treat a missing category as "unknown" and render a bare count — never a guess.
+`capacities()` returns an empty dict for suits with no table entry and no
+override. Callers must treat a missing category as "unknown" and render a
+bare count — never a guess. See "Per-loadout capacity overrides" above for
+the override mechanism.
 
 ### 6.3 `overlay.py` — `PillageOverlay`
 
@@ -378,20 +387,53 @@ mod (`suit_backpackcapacity` in `SuitMods`). Suit **grade does not affect capaci
 
 | Suit | `SuitName` prefix | Goods (Item) | Assets (Component) | Data |
 |------|-------------------|--------------|--------------------|------|
-| Maverick | `utilitysuit` | 40 → **80** | 60 → **120** | 10 → **40** |
+| Maverick | `utilitysuit` | 40 → **80** | 60 → **120** | 20 → **40** |
 | Artemis | `explorationsuit` | 20 → **40** | 40 → **80** | 10 → **20** |
 | Dominator | `tacticalsuit` | 10 → **20** | 20 → **40** | 10 → **20** |
 | Flight Suit | `flightsuit` | unknown | unknown | unknown |
 
 *(base → modded)*
 
-Base and modded values are stored explicitly rather than computed with a multiplier,
-because the multiplier is not uniform: most categories double, but Maverick Data is
-listed as 10 → 40.
+Base and modded values are stored explicitly rather than computed with a multiplier.
+Every category currently happens to double when *Extra Backpack Capacity* is fitted,
+but that's an observation, not a guarantee the plugin relies on — a future suit (or a
+Frontier rebalance) isn't assumed to follow the same ratio.
 
 A suit with a `None` table entry yields `capacities() == {}`, and the window renders
 counts with no limit. This is deliberate — see
 [Design Specification §7](./design-spec.md#7-suit-backpack-capacity).
+
+### Per-loadout capacity overrides
+
+The table above can't capture *Extra Backpack Capacity*'s engineering grade
+(only presence/absence), and has no entry for the Flight Suit. Commanders can
+correct individual categories from the Settings tab, per owned suit loadout:
+
+- Persisted as JSON under EDMC config key `edplg_suit_overrides`, shaped as
+  `{cmdr: {loadout_id: record}}`, where `loadout_id` is the journal's
+  `LoadoutID` (stringified) and `record` is:
+
+  ```python
+  {
+      "name": str,               # LoadoutName, e.g. "Exo 3 NVG"
+      "suit_key": str,           # "explorationsuit", etc.
+      "grade": Optional[int],
+      "has_capacity_mod": bool,
+      "overrides": Dict[str, int],  # category -> commander-entered capacity
+  }
+  ```
+
+- `suit.record_loadout()` upserts the identity fields (`name`/`suit_key`/
+  `grade`/`has_capacity_mod`) every time a `SuitLoadout`/`SwitchSuitLoadout`
+  event is processed, preserving any existing `overrides` — this is what
+  populates the Settings tab's list without a manual "add suit" step.
+- `SuitState.capacities(cmdr)` merges: hardcoded table default, then any
+  per-category override for the current loadout on top
+  (`{**default, **overrides}`). A category absent from `overrides` keeps
+  falling back to the table (or stays unknown, e.g. an un-overridden Flight
+  Suit category).
+- `suit.load_overrides()` / `suit.save_overrides()` mirror the load/save
+  pattern already used for learned resource names in `names.py`.
 
 Other capacities:
 

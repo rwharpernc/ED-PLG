@@ -2,20 +2,37 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+import logging
+import os
+from typing import Callable, Dict, Optional, Tuple
 
 import tkinter as tk
 
 import myNotebook as nb
-from config import config
+from config import appname, config
 from theme import theme
 
+from . import suit
+from .inventory import TRACKED_CATEGORIES
+
+plugin_name = os.path.basename(os.path.dirname(__file__))
+logger = logging.getLogger(f"{appname}.{plugin_name}")
+
 CONFIG_OVERLAY_ENABLED = "edplg_overlay_enabled"
+
+# Journal category -> short in-game wording, for the capacity override rows.
+CATEGORY_SHORT: Dict[str, str] = {
+    "Component": "Assets",
+    "Item": "Goods",
+    "Data": "Data",
+}
 
 _frame: Optional[tk.Frame] = None
 _status_label: Optional[tk.Label] = None
 _last_event_label: Optional[tk.Label] = None
 _overlay_var: Optional[tk.BooleanVar] = None
+_override_vars: Dict[Tuple[str, str], tk.StringVar] = {}
+_override_defaults: Dict[Tuple[str, str], Optional[int]] = {}
 
 
 def create_plugin_app(
@@ -44,9 +61,9 @@ def create_plugin_app(
     return _frame
 
 
-def create_prefs(parent: nb.Notebook, overlay_available: bool) -> nb.Frame:
+def create_prefs(parent: nb.Notebook, overlay_available: bool, cmdr: str) -> nb.Frame:
     """Create the ED-PLG tab in EDMC's settings window."""
-    global _overlay_var
+    global _overlay_var, _override_vars, _override_defaults
 
     frame = nb.Frame(parent)
     frame.columnconfigure(0, weight=1)
@@ -67,17 +84,139 @@ def create_prefs(parent: nb.Notebook, overlay_available: bool) -> nb.Frame:
     )
     nb.Label(frame, text=hint).grid(row=1, column=0, sticky=tk.W, padx=10, pady=(2, 10))
 
+    _override_vars = {}
+    _override_defaults = {}
+    row = _build_capacity_overrides(frame, cmdr, start_row=2)
+
     return frame
+
+
+def _build_capacity_overrides(frame: nb.Frame, cmdr: str, *, start_row: int) -> int:
+    """
+    Add the per-loadout backpack capacity override section.
+
+    Each row is a suit loadout the commander has been seen wearing (recorded
+    from SuitLoadout/SwitchSuitLoadout journal events — see suit.py). Fields
+    are pre-filled with the unengineered default for that suit; update a
+    field only if that specific loadout is engineered (or otherwise holds a
+    different amount than the default). Saving a value that matches the
+    default is treated the same as leaving it alone — it does not fossilize
+    into a stored override.
+    """
+    row = start_row
+    nb.Label(
+        frame,
+        text="Suit Backpack Capacity",
+    ).grid(row=row, column=0, sticky=tk.W, padx=10, pady=(14, 2))
+    row += 1
+
+    loadouts = suit.known_loadouts_for(cmdr) if cmdr else {}
+
+    if not loadouts:
+        nb.Label(
+            frame,
+            text=(
+                "No suits recorded yet for this commander — wear a suit "
+                "in-game, then reopen Settings."
+            ),
+        ).grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 10))
+        return row + 1
+
+    nb.Label(
+        frame,
+        text=(
+            "Pre-filled with the unengineered default. If a suit is "
+            "engineered — or otherwise holds a different amount — update "
+            "the number to what you observe in-game."
+        ),
+        wraplength=440,
+        justify=tk.LEFT,
+    ).grid(row=row, column=0, columnspan=2, sticky=tk.W, padx=10, pady=(0, 6))
+    row += 1
+
+    for loadout_id, record in sorted(
+        loadouts.items(), key=lambda kv: kv[1].get("name") or kv[0],
+    ):
+        row = _add_loadout_row(frame, row, loadout_id, record)
+
+    return row
+
+
+def _add_loadout_row(frame: nb.Frame, row: int, loadout_id: str, record: dict) -> int:
+    suit_key = record.get("suit_key", "")
+    suit_name = suit.SUIT_DISPLAY_NAMES.get(suit_key, suit_key or "Unknown suit")
+    loadout_name = record.get("name") or ""
+    label = f'{suit_name} — "{loadout_name}"' if loadout_name else suit_name
+
+    nb.Label(frame, text=label).grid(
+        row=row, column=0, columnspan=2, sticky=tk.W, padx=10, pady=(6, 0),
+    )
+    row += 1
+
+    defaults = suit.default_capacity(suit_key, bool(record.get("has_capacity_mod")))
+    overrides = record.get("overrides", {})
+
+    fields = nb.Frame(frame)
+    fields.grid(row=row, column=0, columnspan=2, sticky=tk.W, padx=20, pady=(0, 6))
+
+    for col, category in enumerate(TRACKED_CATEGORIES):
+        nb.Label(fields, text=f"{CATEGORY_SHORT[category]}:").grid(
+            row=0, column=col * 3, sticky=tk.W, padx=(0 if col == 0 else 12, 4),
+        )
+
+        default_value = defaults.get(category)
+        if category in overrides:
+            initial = str(overrides[category])
+        elif default_value is not None:
+            initial = str(default_value)
+        else:
+            initial = ""
+
+        var = tk.StringVar(value=initial)
+        _override_vars[(loadout_id, category)] = var
+        _override_defaults[(loadout_id, category)] = default_value
+        nb.Entry(fields, textvariable=var, width=6).grid(row=0, column=col * 3 + 1, sticky=tk.W)
+
+        if default_value is None:
+            hint = nb.Label(fields, text="(no default — enter observed value)")
+            hint.grid(row=0, column=col * 3 + 2, sticky=tk.W, padx=(4, 0))
+
+    return row + 1
 
 
 def overlay_enabled() -> bool:
     return bool(config.get_bool(CONFIG_OVERLAY_ENABLED, default=True))
 
 
-def save_prefs() -> bool:
+def save_prefs(cmdr: str) -> bool:
     """Persist settings from the prefs tab; returns the new overlay state."""
     if _overlay_var is not None:
         config.set(CONFIG_OVERLAY_ENABLED, _overlay_var.get())
+
+    for (loadout_id, category), var in _override_vars.items():
+        text = var.get().strip()
+        if not text:
+            suit.set_override(cmdr, loadout_id, category, None)
+            continue
+
+        try:
+            value = int(text)
+        except ValueError:
+            logger.debug("Ignoring non-numeric capacity override %r for %s/%s", text, loadout_id, category)
+            continue  # Leave the previously stored value untouched.
+
+        if value <= 0:
+            continue
+
+        default_value = _override_defaults.get((loadout_id, category))
+        if value == default_value:
+            # Matches the (possibly pre-filled) default — don't fossilize it as an
+            # explicit override, so a later correction to CAPACITIES isn't masked.
+            suit.set_override(cmdr, loadout_id, category, None)
+        else:
+            suit.set_override(cmdr, loadout_id, category, value)
+
+    suit.save_overrides()
     return overlay_enabled()
 
 

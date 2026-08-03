@@ -22,6 +22,7 @@ from .inventory import InventoryTracker, TRACKED_CATEGORIES
 from .overlay import PillageOverlay
 from .suit import SuitState
 from . import names
+from . import suit
 from . import ui
 from . import window
 
@@ -51,6 +52,7 @@ def plugin_start3(plugin_dir: str) -> str:
     """Load ED-PLG into EDMarketConnector."""
     logger.info("ED-PLG v%s starting from %s", __version__, plugin_dir)
     names.load_learned_names()
+    suit.load_overrides()
     _overlay.set_enabled(ui.overlay_enabled())
     if not _overlay.available:
         logger.info("No overlay plugin found; pillage overlay disabled")
@@ -60,6 +62,7 @@ def plugin_start3(plugin_dir: str) -> str:
 def plugin_stop() -> None:
     """EDMarketConnector is closing."""
     names.save_learned_names()
+    suit.save_overrides()
     _overlay.clear()
     window.close()
     logger.info("ED-PLG shutting down")
@@ -79,12 +82,12 @@ def _show_inventory() -> None:
 
 def plugin_prefs(parent, cmdr: str, is_beta: bool):
     """Create the ED-PLG settings tab."""
-    return ui.create_prefs(parent, _overlay.available)
+    return ui.create_prefs(parent, _overlay.available, cmdr)
 
 
 def prefs_changed(cmdr: str, is_beta: bool) -> None:
     """Settings were saved."""
-    _overlay.set_enabled(ui.save_prefs())
+    _overlay.set_enabled(ui.save_prefs(cmdr))
 
 
 def journal_entry(
@@ -131,7 +134,7 @@ def _dispatch(
     if event in ("SuitLoadout", "SwitchSuitLoadout"):
         # Disembarking / starting on foot / changing loadout: the suit determines
         # backpack capacity, so record it alongside the backpack contents.
-        _suit.apply_suit_loadout(entry)
+        _suit.apply_suit_loadout(entry, cmdr=cmdr)
         _tracker.sync_backpack_from_state(state)
         logger.debug(
             "Suit set to %s; backpack synced (%s)",

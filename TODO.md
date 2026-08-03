@@ -14,14 +14,13 @@ to any version; pick items up as desired.
 
 ## Fixable gaps
 
-- [BLOCKED] Research and fill in Flight Suit backpack capacity (`CAPACITIES` in `plugin/suit.py`).
-  Web research was inconclusive: the Fandom wiki (the likely authoritative source) blocked
-  automated fetches, and the only numbers surfaced via search were AI-summarized figures for
-  the *Maverick* suit that contradict this plugin's own already-verified Maverick table —
-  meaning they aren't trustworthy either. Per the plugin's "never guess" rule (design-spec §7),
-  no value was hardcoded. Needs a real in-game observation (grade doesn't matter) from someone
-  who owns an unmodified Flight Suit — Extra Backpack Capacity is moot since the Flight Suit
-  cannot be engineered.
+- [x] Flight Suit backpack capacity, and per-suit capacity accuracy in general. Rather than
+  keep researching a single hardcoded figure, added a Settings-tab control (`plugin/ui.py`,
+  `plugin/suit.py`) letting a commander enter their own observed capacity per owned suit
+  loadout (keyed by journal `LoadoutID`), pre-filled with the unengineered default and left
+  untouched unless it's wrong for that specific loadout. This also covers *Extra Backpack
+  Capacity*'s engineering grade, which the journal never reports and the old hardcoded table
+  couldn't represent. Shipped in 0.8.0-beta.1.
 - [x] Persist learned display names across sessions instead of relearning every login
   (`plugin/names.py` — `load_learned_names()`/`save_learned_names()`, wired into
   `plugin_start3`/`plugin_stop` in `plugin/load.py`). Shipped in 0.7.2.

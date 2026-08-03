@@ -208,15 +208,28 @@ These feed a hardcoded table in `suit.py` (see
 
 Design rules:
 
-- **Never guess.** A suit with no table entry (currently the Flight Suit) shows
-  counts with no capacity, rather than a plausible-looking wrong number. A wrong
-  capacity is worse than no capacity: the entire point of the window is deciding
-  whether to loot, and a bad figure produces a bad decision.
+- **The plugin never guesses.** A suit with no table entry (currently the
+  Flight Suit) shows counts with no capacity, rather than a plausible-looking
+  wrong number. A wrong capacity is worse than no capacity: the entire point
+  of the window is deciding whether to loot, and a bad figure produces a bad
+  decision. The one exception is an explicit value the commander types in
+  themselves (see below) — that's ground truth the commander observed
+  in-game, not a plugin-generated guess.
 - **Store the observed value, not the modifier.** Base and modded capacities are
   listed explicitly rather than derived by doubling, because the multiplier is not
   uniform across categories.
 - Capacity figures are game data, not journal data, and may drift when Frontier
   rebalances suits. They live in one table so they can be corrected in one place.
+
+The hardcoded table only tracks whether *Extra Backpack Capacity* is fitted,
+not its engineering grade — so it can't be exactly right for every commander,
+and has no entry at all for the Flight Suit. To cover both cases, the
+Settings tab lets a commander enter their own observed capacity per
+category, tracked per owned suit loadout (keyed by the journal's
+`LoadoutID`, auto-discovered as loadouts are worn — see `suit.py`'s
+`known_loadouts_for`/`set_override`). A blank field falls back to the
+hardcoded default, so a later correction to the table isn't silently masked
+by a stale override left over from before.
 
 ## 8. Name Resolution Strategy
 
@@ -264,9 +277,10 @@ These are inherited from the game and EDMC, not bugs in ED-PLG:
 - EDMC's `BackPack` state is best-effort; ED-PLG reconciles against it after
   each change to stay aligned with core tracking.
 - Backpack capacity is not journal-reported and is hardcoded per suit (§7); it can
-  fall out of date if Frontier rebalances suits. The Flight Suit entry remains
-  unknown — reliable, verifiable capacity figures could not be sourced (see
-  `TODO.md`), and the plugin will not guess.
+  fall out of date if Frontier rebalances suits, and the *Extra Backpack Capacity*
+  mod is only tracked as present/absent, not by engineering grade. The Flight
+  Suit has no hardcoded entry at all. A commander can correct any of this
+  per owned suit loadout from the Settings tab rather than editing `suit.py`.
 
 ## 11. Future Considerations
 

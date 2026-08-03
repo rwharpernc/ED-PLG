@@ -231,7 +231,7 @@ class InventoryWindow:
         self._heading["text"] = f"Suit: {self._suit.display_name}"
 
         capacities = {
-            "backpack": self._suit.capacities(),
+            "backpack": self._suit.capacities(cmdr=self._tracker.commander),
             "ship_locker": SHIP_LOCKER_CAPACITY,
             "fleet_carrier_locker": {},
         }

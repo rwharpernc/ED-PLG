@@ -5,6 +5,28 @@ All notable changes to ED-PLG are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0-beta.1] - 2026-08-03
+
+### Added
+
+- **Per-loadout backpack capacity overrides.** The hardcoded capacity table
+  could only say whether *Extra Backpack Capacity* was fitted, not its
+  engineering grade, and had no entry at all for the Flight Suit. **File →
+  Settings → ED-PLG** now lists every suit loadout you've been seen wearing
+  (auto-discovered from `SuitLoadout`/`SwitchSuitLoadout` events, keyed by
+  the journal's `LoadoutID`), with an editable capacity field per category
+  pre-filled with the unengineered default. Leave a field alone if it's
+  right; update it if that specific loadout is engineered or otherwise
+  holds a different amount. Saving a value that matches the default doesn't
+  persist as an override, so future corrections to the built-in table still
+  apply automatically.
+
+### Fixed
+
+- **Maverick Suit base Data capacity corrected from 10 to 20** (modded stays
+  40). The previous figure predated this pass and didn't match verified
+  in-game observation.
+
 ## [0.7.2] - 2026-08-02
 
 ### Added

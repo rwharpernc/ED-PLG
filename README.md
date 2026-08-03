@@ -87,22 +87,20 @@ Frontier's journal identifies resources by internal ID (`manufacturinginstructio
 
 Because the game supplies `Name_Localised` for essentially every resource whose label differs from its ID, the curated table rarely needs to grow. It exists to fix the cases the fallback mangles — acronyms like `rdx` → **RDX** — not to enumerate the game.
 
-### Backpack capacity is guesswork (and why)
+### Backpack capacity: defaults plus your own numbers
 
-**The journal reports what is in your backpack, but never how much it holds.** There is no event, anywhere, that publishes your capacity. So ED-PLG can either hardcode the figures or show you nothing.
-
-It hardcodes them, in [suit.py](plugin/suit.py), keyed by suit type and whether the *Extra Backpack Capacity* mod is fitted. Suit **grade does not affect capacity** — a Grade 5 Maverick carries exactly as much as a Grade 1 one.
+**The journal reports what is in your backpack, but never how much it holds.** There is no event, anywhere, that publishes your capacity. So ED-PLG hardcodes the unengineered defaults, in [suit.py](plugin/suit.py), keyed by suit type and whether the *Extra Backpack Capacity* mod is fitted. Suit **grade does not affect capacity** on its own — a Grade 5 Maverick carries exactly as much as a Grade 1 one *unless* Extra Backpack Capacity is engineered onto it, and the journal only reports whether that mod is present, not which grade.
 
 | Suit | Goods (Item) | Assets (Component) | Data |
 |------|--------------|--------------------|------|
-| Maverick | 40 → **80** | 60 → **120** | 10 → **40** |
+| Maverick | 40 → **80** | 60 → **120** | 20 → **40** |
 | Artemis | 20 → **40** | 40 → **80** | 10 → **20** |
 | Dominator | 10 → **20** | 20 → **40** | 10 → **20** |
 | Flight Suit | unknown | unknown | unknown |
 
 *(base → with Extra Backpack Capacity)*
 
-Where a capacity is unknown, the window shows a plain count and **no capacity bar** — it will not invent a limit and mislead you. If a figure disagrees with your game, the `CAPACITIES` table in `suit.py` is the one place to correct it.
+Because engineering grade isn't visible to the plugin, and the Flight Suit has no known figure at all, **File → Settings → ED-PLG** lists every suit loadout you've been seen wearing, with an editable capacity field per category, pre-filled with the default above. Leave a field alone if it's right; update it if that specific loadout is engineered (or otherwise holds a different amount) — the Inventory window's capacity bar for that loadout then uses your number instead of the default. Where no default exists (Flight Suit) and you haven't entered one either, the window shows a plain count and **no capacity bar** rather than inventing a limit.
 
 ### Fleet carrier data is late
 
@@ -209,6 +207,7 @@ If the overlay throws an error at any point, ED-PLG disables it for the session 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Show pillage notifications on the in-game overlay | On | Greyed out when no overlay plugin is installed |
+| Suit Backpack Capacity | Unengineered default per suit | One editable row per suit loadout you've worn; see [Backpack capacity](#backpack-capacity-defaults-plus-your-own-numbers) above |
 
 ## Troubleshooting
 
@@ -217,7 +216,7 @@ The EDMC log is at `%TEMP%\EDMarketConnector.log` on Windows; search it for `EDP
 - **Plugin not listed / no panel** — Check the folder is named exactly `EDPLG` with the `.py` files directly inside (see the layout above), then restart EDMC.
 - **Listed as disabled** — A folder name ending in `.disabled` is skipped by EDMC. Remove the suffix and restart.
 - **Overlay messages not appearing** — Confirm EDMCModernOverlay is installed and running. In **File → Settings → ED-PLG**, a greyed-out checkbox means EDMC could not import `edmcoverlay` at all. If the box is enabled but nothing draws, search the log for `EDMCModernOverlay is not available to accept messages`.
-- **Wrong backpack capacity** — Expected; the game never publishes capacity, so it is hardcoded. Fix the `CAPACITIES` table in `plugin/suit.py`.
+- **Wrong backpack capacity** — Expected for an engineered suit or the Flight Suit; the game never publishes capacity, so unengineered defaults are hardcoded. Enter the correct number for that specific loadout in **File → Settings → ED-PLG**.
 - **Carrier numbers look stale** — Also expected. CAPI is throttled; see [Fleet carrier data is late](#fleet-carrier-data-is-late).
 
 ## Development
@@ -261,7 +260,7 @@ See the [Technical Specification](docs/tech-spec.md) for the full API surface, e
 
 Nearly all of these come from the same root cause: **the plugin can only know what the journal tells it.**
 
-- **Backpack capacity is not published by the game** — hence the hardcoded table in `suit.py`. Flight Suit capacity is unknown and renders without a limit; reliable figures could not be sourced (see `TODO.md`), and the plugin won't guess.
+- **Backpack capacity is not published by the game** — hence the hardcoded default table in `suit.py`, which can't reflect *Extra Backpack Capacity*'s engineering grade or the Flight Suit (no known default at all). Correct it per suit loadout in **File → Settings → ED-PLG** rather than guessing.
 - **Backpack contents may be incomplete if you log in already on foot** — the game does not always emit a full baseline in that case. ED-PLG can't fill the gap, but it does track whether a real baseline has arrived this session and will show "backpack pending first sync" in the panel and inventory window instead of presenting a possibly-stale zero as confirmed.
 - **Some consumable changes have no journal event at all** (throwing a grenade, for instance), so those counts can drift until the next baseline.
 - **Fleet carrier data lags 15–30 minutes** — CAPI, not journal, and throttled.
