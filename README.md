@@ -4,7 +4,7 @@
 
 A lightweight [Elite Dangerous Market Connector](https://github.com/EDCD/EDMarketConnector) (EDMC) plugin for *Elite Dangerous: Odyssey*. ED-PLG tracks on-foot microresources — the components, items, and data you spend on suit and weapon upgrades — and tells you what you just looted, how much of it you now own, and whether you still have room to carry it.
 
-**Author:** CMDR Mactavious  
+**Author:** CMDR Bocheaux  
 **Version:** 0.8.0-beta.2  
 **License:** [MIT](LICENSE)
 
@@ -28,90 +28,6 @@ That total is the number that matters when you are deciding whether a pickup is 
 - **Real names** for Frontier's internal resource IDs (`manufacturinginstructions` → *Manufacturing Instructions*)
 
 **Deliberately out of scope:** ship engineering materials (Raw, Manufactured, Encoded) and commodity cargo. Those are separate game systems. ED-PLG deals only in Odyssey microresources — the stuff that upgrades your ground gear.
-
-## How it works
-
-### ED-PLG never touches the game
-
-The plugin does not read your game files, inject anything, or talk to Elite Dangerous at all. It is a passive listener sitting behind EDMC:
-
-```
-Elite Dangerous  →  writes journal files  →  EDMC tails them  →  ED-PLG reacts
-```
-
-EDMC watches the game's journal (the event log Frontier writes to disk as you play), parses each event, and hands it to every installed plugin. ED-PLG implements EDMC's plugin callbacks — chiefly `journal_entry()` — and updates its own counts from what it is given. Everything you see in the panel, window, and overlay is derived from that stream.
-
-This is why the plugin is read-only and safe by construction, and also why it can only know what the journal chooses to report. Most of the [limitations](#known-limitations) below trace back to that one fact.
-
-### Three stores, one total
-
-ED-PLG keeps three separate ledgers, because the game does:
-
-| Store | Source | Notes |
-|-------|--------|-------|
-| **Backpack** | Journal | What you are carrying on foot. Capacity depends on your suit. |
-| **Ship locker** | Journal | What is stowed in the ship. 1000 per category. |
-| **Carrier locker** | Frontier CAPI | Your fleet carrier's locker, if you have one. Lags the live game. |
-
-The number in a pillage message — *"New Inventory Total: 12"* — is the **sum of all three**. That is the question you actually want answered when a container pops open: *do I already have enough of this?* Not *how many are in my backpack right now?* If you are ever confused why the announced total exceeds what your backpack could possibly hold, this is why. The Inventory window breaks the same data back out per location.
-
-### Baselines and deltas
-
-Two kinds of journal event drive the counts, and they work differently:
-
-- **Baseline events** (`LoadGame`, `Backpack`, `ShipLocker`, `SuitLoadout`, …) carry a *full* listing. ED-PLG throws away its counts and rebuilds them from scratch. These fire when you log in, disembark, board, or resupply.
-- **Delta events** (`BackpackChange`) carry only *what changed* — "+1 Manufacturing Instructions". ED-PLG applies the change to its running counts, and this is the only event that triggers a pillage announcement.
-
-Deltas are fast but can drift if one is ever missed. So after processing every `BackpackChange`, ED-PLG **reconciles against EDMC's own inventory state** rather than trusting its arithmetic ([load.py:244](plugin/load.py#L244)). The delta tells you what to *announce*; EDMC's state decides what is *true*. Errors cannot accumulate across a session.
-
-### Categories
-
-The game's UI and its journal use different words for the same three things. ED-PLG speaks journal internally and shows you the in-game labels:
-
-| In game | Journal / code | Example |
-|---------|----------------|---------|
-| Assets | `Component` | Circuit Board |
-| Goods | `Item` | Health Pack |
-| Data | `Data` | Manufacturing Instructions |
-
-Consumables (grenades, energy cells) are counted internally to keep the backpack model honest, but never announced as pillage — you did not loot them, you were issued them.
-
-### Resource names
-
-Frontier's journal identifies resources by internal ID (`manufacturinginstructions`). Display names are resolved in this order:
-
-1. `Name_Localised` from the journal event — the game's own label, correct and localised
-2. A curated override table in [names.py](plugin/names.py)
-3. Names learned from `Name_Localised` earlier in this session or a previous one — the
-   learned cache is persisted to EDMC's config and restored on the next launch
-4. A title-cased fallback
-
-Because the game supplies `Name_Localised` for essentially every resource whose label differs from its ID, the curated table rarely needs to grow. It exists to fix the cases the fallback mangles — acronyms like `rdx` → **RDX** — not to enumerate the game.
-
-### Backpack capacity: defaults plus your own numbers
-
-**The journal reports what is in your backpack, but never how much it holds.** There is no event, anywhere, that publishes your capacity. So ED-PLG hardcodes the unengineered defaults, in [suit.py](plugin/suit.py), keyed by suit type and whether the *Extra Backpack Capacity* mod is fitted. Suit **grade does not affect capacity** on its own — a Grade 5 Maverick carries exactly as much as a Grade 1 one *unless* Extra Backpack Capacity is engineered onto it, and the journal only reports whether that mod is present, not which grade.
-
-| Suit | Goods (Item) | Assets (Component) | Data |
-|------|--------------|--------------------|------|
-| Maverick | 40 → **80** | 60 → **120** | 20 → **40** |
-| Artemis | 20 → **40** | 40 → **80** | 10 → **20** |
-| Dominator | 10 → **20** | 20 → **40** | 10 → **20** |
-| Flight Suit | unknown | unknown | unknown |
-
-*(base → with Extra Backpack Capacity)*
-
-Because engineering grade isn't visible to the plugin, and the Flight Suit has no known figure at all, **File → Settings → ED-PLG** lists every suit loadout you've been seen wearing, with an editable capacity field per category, pre-filled with the default above. Leave a field alone if it's right; update it if that specific loadout is engineered (or otherwise holds a different amount) — the Inventory window's capacity bar for that loadout then uses your number instead of the default. Where no default exists (Flight Suit) and you haven't entered one either, the window shows a plain count and **no capacity bar** rather than inventing a limit.
-
-### Fleet carrier data is late
-
-Carrier locker contents do not appear in the journal at all. They come from Frontier's CAPI, which EDMC fetches on carrier events with a 15-minute throttle — so **carrier figures can lag the live game by 15–30 minutes**. Treat them as a recent snapshot, not a live readout. Data is cached per commander, so switching accounts never bleeds counts between CMDRs.
-
-### Ship locker capacity warning
-
-The ship locker caps at 1000 per category. Fill one while out looting and you can be forced to drop items rather than store them — whether you're offloading at your own ship, or remotely via an Apex shuttle's "Manage Items" screen (which isn't separate storage — it's a proxy into the same locker your ship uses).
-
-When a category (Assets, Goods, or Data) reaches 90% of capacity (900/1000), ED-PLG sends a red, longer-lived overlay warning distinct from ordinary pillage notifications, and logs it. It won't repeat while you stay over 90%, but it rearms — so if you offload and later refill past 90% again, you'll get warned again. Requires the in-game overlay to be installed and enabled; it also always logs to `EDMarketConnector.log` either way.
 
 ## Requirements
 
@@ -226,7 +142,103 @@ The EDMC log is at `%TEMP%\EDMarketConnector.log` on Windows; search it for `EDP
 - **Wrong backpack capacity** — Expected for an engineered suit or the Flight Suit; the game never publishes capacity, so unengineered defaults are hardcoded. Enter the correct number for that specific loadout in **File → Settings → ED-PLG**.
 - **Carrier numbers look stale** — Also expected. CAPI is throttled; see [Fleet carrier data is late](#fleet-carrier-data-is-late).
 
-## Development
+## How it works
+
+### ED-PLG never touches the game
+
+The plugin does not read your game files, inject anything, or talk to Elite Dangerous at all. It is a passive listener sitting behind EDMC:
+
+```
+Elite Dangerous  →  writes journal files  →  EDMC tails them  →  ED-PLG reacts
+```
+
+EDMC watches the game's journal (the event log Frontier writes to disk as you play), parses each event, and hands it to every installed plugin. ED-PLG implements EDMC's plugin callbacks — chiefly `journal_entry()` — and updates its own counts from what it is given. Everything you see in the panel, window, and overlay is derived from that stream.
+
+This is why the plugin is read-only and safe by construction, and also why it can only know what the journal chooses to report. Most of the [limitations](#known-limitations) below trace back to that one fact.
+
+### Three stores, one total
+
+ED-PLG keeps three separate ledgers, because the game does:
+
+| Store | Source | Notes |
+|-------|--------|-------|
+| **Backpack** | Journal | What you are carrying on foot. Capacity depends on your suit. |
+| **Ship locker** | Journal | What is stowed in the ship. 1000 per category. |
+| **Carrier locker** | Frontier CAPI | Your fleet carrier's locker, if you have one. Lags the live game. |
+
+The number in a pillage message — *"New Inventory Total: 12"* — is the **sum of all three**. That is the question you actually want answered when a container pops open: *do I already have enough of this?* Not *how many are in my backpack right now?* If you are ever confused why the announced total exceeds what your backpack could possibly hold, this is why. The Inventory window breaks the same data back out per location.
+
+### Baselines and deltas
+
+Two kinds of journal event drive the counts, and they work differently:
+
+- **Baseline events** (`LoadGame`, `Backpack`, `ShipLocker`, `SuitLoadout`, …) carry a *full* listing. ED-PLG throws away its counts and rebuilds them from scratch. These fire when you log in, disembark, board, or resupply.
+- **Delta events** (`BackpackChange`) carry only *what changed* — "+1 Manufacturing Instructions". ED-PLG applies the change to its running counts, and this is the only event that triggers a pillage announcement.
+
+Deltas are fast but can drift if one is ever missed. So after processing every `BackpackChange`, ED-PLG **reconciles against EDMC's own inventory state** rather than trusting its arithmetic ([load.py:244](plugin/load.py#L244)). The delta tells you what to *announce*; EDMC's state decides what is *true*. Errors cannot accumulate across a session.
+
+### Categories
+
+The game's UI and its journal use different words for the same three things. ED-PLG speaks journal internally and shows you the in-game labels:
+
+| In game | Journal / code | Example |
+|---------|----------------|---------|
+| Assets | `Component` | Circuit Board |
+| Goods | `Item` | Health Pack |
+| Data | `Data` | Manufacturing Instructions |
+
+Consumables (grenades, energy cells) are counted internally to keep the backpack model honest, but never announced as pillage — you did not loot them, you were issued them.
+
+### Resource names
+
+Frontier's journal identifies resources by internal ID (`manufacturinginstructions`). Display names are resolved in this order:
+
+1. `Name_Localised` from the journal event — the game's own label, correct and localised
+2. A curated override table in [names.py](plugin/names.py)
+3. Names learned from `Name_Localised` earlier in this session or a previous one — the
+   learned cache is persisted to EDMC's config and restored on the next launch
+4. A title-cased fallback
+
+Because the game supplies `Name_Localised` for essentially every resource whose label differs from its ID, the curated table rarely needs to grow. It exists to fix the cases the fallback mangles — acronyms like `rdx` → **RDX** — not to enumerate the game.
+
+### Backpack capacity: defaults plus your own numbers
+
+**The journal reports what is in your backpack, but never how much it holds.** There is no event, anywhere, that publishes your capacity. So ED-PLG hardcodes the unengineered defaults, in [suit.py](plugin/suit.py), keyed by suit type and whether the *Extra Backpack Capacity* mod is fitted. Suit **grade does not affect capacity** on its own — a Grade 5 Maverick carries exactly as much as a Grade 1 one *unless* Extra Backpack Capacity is engineered onto it, and the journal only reports whether that mod is present, not which grade.
+
+| Suit | Goods (Item) | Assets (Component) | Data |
+|------|--------------|--------------------|------|
+| Maverick | 40 → **80** | 60 → **120** | 20 → **40** |
+| Artemis | 20 → **40** | 40 → **80** | 10 → **20** |
+| Dominator | 10 → **20** | 20 → **40** | 10 → **20** |
+| Flight Suit | unknown | unknown | unknown |
+
+*(base → with Extra Backpack Capacity)*
+
+Because engineering grade isn't visible to the plugin, and the Flight Suit has no known figure at all, **File → Settings → ED-PLG** lists every suit loadout you've been seen wearing, with an editable capacity field per category, pre-filled with the default above. Leave a field alone if it's right; update it if that specific loadout is engineered (or otherwise holds a different amount) — the Inventory window's capacity bar for that loadout then uses your number instead of the default. Where no default exists (Flight Suit) and you haven't entered one either, the window shows a plain count and **no capacity bar** rather than inventing a limit.
+
+### Fleet carrier data is late
+
+Carrier locker contents do not appear in the journal at all. They come from Frontier's CAPI, which EDMC fetches on carrier events with a 15-minute throttle — so **carrier figures can lag the live game by 15–30 minutes**. Treat them as a recent snapshot, not a live readout. Data is cached per commander, so switching accounts never bleeds counts between CMDRs.
+
+### Ship locker capacity warning
+
+The ship locker caps at 1000 per category. Fill one while out looting and you can be forced to drop items rather than store them — whether you're offloading at your own ship, or remotely via an Apex shuttle's "Manage Items" screen (which isn't separate storage — it's a proxy into the same locker your ship uses).
+
+When a category (Assets, Goods, or Data) reaches 90% of capacity (900/1000), ED-PLG sends a red, longer-lived overlay warning distinct from ordinary pillage notifications, and logs it. It won't repeat while you stay over 90%, but it rearms — so if you offload and later refill past 90% again, you'll get warned again. Requires the in-game overlay to be installed and enabled; it also always logs to `EDMarketConnector.log` either way.
+
+## Known Limitations
+
+Nearly all of these come from the same root cause: **the plugin can only know what the journal tells it.**
+
+- **Backpack capacity is not published by the game** — hence the hardcoded default table in `suit.py`, which can't reflect *Extra Backpack Capacity*'s engineering grade or the Flight Suit (no known default at all). Correct it per suit loadout in **File → Settings → ED-PLG** rather than guessing.
+- **Backpack contents may be incomplete if you log in already on foot** — the game does not always emit a full baseline in that case. ED-PLG can't fill the gap, but it does track whether a real baseline has arrived this session and will show "backpack pending first sync" in the panel and inventory window instead of presenting a possibly-stale zero as confirmed.
+- **Some consumable changes have no journal event at all** (throwing a grenade, for instance), so those counts can drift until the next baseline.
+- **Fleet carrier data lags 15–30 minutes** — CAPI, not journal, and throttled.
+- Inventory tracking leans on EDMC's best-effort `BackPack` state; ED-PLG reconciles against it after every change, which corrects drift but inherits any gaps EDMC itself has.
+
+See [Design Specification — Known Limitations](docs/design-spec.md#11-known-limitations) for the detail.
+
+## For Developers
 
 ```bash
 npm run build     # copies plugin/ → dist/EDPLG/, stripping __pycache__
@@ -263,18 +275,6 @@ The tracker, names, suit, overlay, and window modules can all be exercised **out
 
 See the [Technical Specification](docs/tech-spec.md) for the full API surface, event schemas, and handler behaviour.
 
-## Known Limitations
-
-Nearly all of these come from the same root cause: **the plugin can only know what the journal tells it.**
-
-- **Backpack capacity is not published by the game** — hence the hardcoded default table in `suit.py`, which can't reflect *Extra Backpack Capacity*'s engineering grade or the Flight Suit (no known default at all). Correct it per suit loadout in **File → Settings → ED-PLG** rather than guessing.
-- **Backpack contents may be incomplete if you log in already on foot** — the game does not always emit a full baseline in that case. ED-PLG can't fill the gap, but it does track whether a real baseline has arrived this session and will show "backpack pending first sync" in the panel and inventory window instead of presenting a possibly-stale zero as confirmed.
-- **Some consumable changes have no journal event at all** (throwing a grenade, for instance), so those counts can drift until the next baseline.
-- **Fleet carrier data lags 15–30 minutes** — CAPI, not journal, and throttled.
-- Inventory tracking leans on EDMC's best-effort `BackPack` state; ED-PLG reconciles against it after every change, which corrects drift but inherits any gaps EDMC itself has.
-
-See [Design Specification — Known Limitations](docs/design-spec.md#11-known-limitations) for the detail.
-
 ## Documentation
 
 | Document | Description |
@@ -286,8 +286,8 @@ See [Design Specification — Known Limitations](docs/design-spec.md#11-known-li
 
 ## Credits & License
 
-ED-PLG is a fan-made tool by **CMDR Mactavious**. It is not affiliated with Frontier Developments or the EDMC development team.
+ED-PLG is a fan-made tool by **CMDR Bocheaux**. It is not affiliated with Frontier Developments or the EDMC development team.
 
 Full credits — including EDMC, the Elite Dangerous Player Journal documentation, and EDCD/FDevIDs microresource data — are in [docs/ATTRIBUTIONS.md](docs/ATTRIBUTIONS.md).
 
-Copyright (c) 2025 CMDR Mactavious. Released under the [MIT License](LICENSE).
+Copyright (c) 2025 CMDR Bocheaux. Released under the [MIT License](LICENSE).

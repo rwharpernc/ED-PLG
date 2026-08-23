@@ -2,7 +2,7 @@
 
 ## Author
 
-**CMDR Mactavious** — creator and maintainer of ED-PLG.
+**CMDR Bocheaux** — creator and maintainer of ED-PLG.
 
 ## Software & Libraries
 

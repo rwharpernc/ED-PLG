@@ -1,7 +1,7 @@
 # ED-PLG Design Specification
 
 **Version:** 0.7.0  
-**Author:** CMDR Mactavious  
+**Author:** CMDR Bocheaux  
 **Last updated:** 2026-07-13
 
 ## 1. Purpose
