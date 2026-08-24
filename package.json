@@ -4,6 +4,7 @@
   "version": "0.8.0-beta.2",
   "description": "Elite Dangerous Pillage Ledger & Gear-tracker \u2014 EDMC plugin",
   "scripts": {
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "package": "node scripts/build.mjs && node scripts/package.mjs"
   }
 }

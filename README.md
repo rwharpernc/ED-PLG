@@ -242,15 +242,16 @@ See [Design Specification — Known Limitations](docs/design-spec.md#11-known-li
 
 ```bash
 npm run build     # copies plugin/ → dist/EDPLG/, stripping __pycache__
+npm run package   # does the above, then zips it to dist/EDPLG-v<version>.zip
 ```
 
-The build script is a convenience, not a compiler — the plugin *is* its source. Edit `plugin/`, rebuild if you like, copy to EDMC, restart.
+The build script is a convenience, not a compiler — the plugin *is* its source. Edit `plugin/`, rebuild if you like, copy to EDMC, restart. `npm run package`'s zip is the same artifact published on the Releases page.
 
 ```
 ED-PLG/
 ├── plugin/           # Python source — this is the plugin
 ├── docs/             # Specifications and credits
-├── scripts/          # build.mjs
+├── scripts/          # build.mjs, package.mjs
 ├── dist/EDPLG/       # Build output (gitignored)
 ├── CHANGELOG.md
 ├── LICENSE
