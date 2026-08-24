@@ -5,6 +5,15 @@ All notable changes to ED-PLG are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-08-24
+
+### Changed
+
+- **First stable release.** No functional changes from 0.8.0-beta.3 — the
+  beta cycle (per-loadout capacity overrides, ship locker capacity
+  warnings, capacity highlighting) is considered validated, so the plugin
+  drops its beta designation.
+
 ## [0.8.0-beta.3] - 2026-08-24
 
 ### Added

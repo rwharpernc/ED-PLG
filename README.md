@@ -5,7 +5,7 @@
 A lightweight [Elite Dangerous Market Connector](https://github.com/EDCD/EDMarketConnector) (EDMC) plugin for *Elite Dangerous: Odyssey*. ED-PLG tracks on-foot microresources — the components, items, and data you spend on suit and weapon upgrades — and tells you what you just looted, how much of it you now own, and whether you still have room to carry it.
 
 **Author:** CMDR Bocheaux  
-**Version:** 0.8.0-beta.3  
+**Version:** 1.0.0  
 **License:** [MIT](LICENSE)
 
 ---

@@ -1,8 +1,8 @@
 # ED-PLG Technical Specification
 
-**Version:** 0.7.0  
+**Version:** 1.0.0  
 **Author:** CMDR Bocheaux  
-**Last updated:** 2026-07-13
+**Last updated:** 2026-08-24
 
 ## 1. Overview
 
@@ -320,6 +320,22 @@ in-panel heading, so the active location is legible even where the ttk tab strip
 not. Row striping is derived from the resolved Treeview background — lightened when
 dark, darkened when light — rather than hardcoded, so it holds up in both themes.
 
+**Capacity highlighting.** Each category's progress bar and total label recolour
+based on `total` vs. `capacity`, reusing `inventory.WARNING_THRESHOLD` (0.9) so the
+visual cue lines up with when the ship locker overlay warning (§8) would fire:
+
+| State | Threshold | Bar style | Label colour |
+|-------|-----------|-----------|--------------|
+| Normal | `< capacity * 0.9` | `EDPLG.Horizontal.TProgressbar` | Theme default (`_default_label_colour()`, looked up fresh each refresh) |
+| Near capacity | `>= capacity * 0.9` | `EDPLG.Near.Horizontal.TProgressbar` | `#c07000` (amber) |
+| At/over capacity | `>= capacity` | `EDPLG.Full.Horizontal.TProgressbar` | `#c0392b` (red) |
+
+`_LocationTab._set_capacity_level()` applies this on every `update()` call, so a
+category clears back to normal as soon as its count drops back under threshold —
+there is no separate "rearm" state to track, unlike the overlay warning's
+once-per-crossing debounce. A category with unknown capacity (e.g. the carrier
+locker) always renders normal.
+
 ### 6.5 `names.py`
 
 ```python
@@ -485,7 +501,8 @@ Apex-specific handling exists or is needed.
 ## 9. Build System
 
 ```bash
-npm run build
+npm run build     # scripts/build.mjs
+npm run package   # scripts/build.mjs, then scripts/package.mjs
 ```
 
 `scripts/build.mjs`:
@@ -493,6 +510,12 @@ npm run build
 1. Deletes `dist/EDPLG/`.
 2. Recursively copies `plugin/` → `dist/EDPLG/`.
 3. Skips `__pycache__` and `.pyc` files.
+
+`scripts/package.mjs` (requires a prior build) reads `__version__` from
+`plugin/__init__.py` and zips `dist/EDPLG/` to `dist/EDPLG-v<version>.zip` via
+`Compress-Archive`, zipping the `EDPLG` folder itself (not just its contents) so
+extracting the archive drops a ready-to-copy `EDPLG/` folder straight into the EDMC
+plugins directory. This is the artefact attached to GitHub releases.
 
 No transpilation or bundling — EDMC loads Python source directly.
 
@@ -526,7 +549,9 @@ Manual verification steps for releases:
    after 8 seconds; loot the same item again and confirm the line updates in place
    rather than duplicating.
 7. Open the **Inventory** window; confirm the suit heading matches the worn suit,
-   the capacity bars match §7, and looting updates the window live.
+   the capacity bars match §7, and looting updates the window live. Fill a
+   category to 90%+ of capacity and confirm its bar/total turn amber, then to
+   100%+ and confirm red; drop back under 90% and confirm it clears to normal.
 8. Confirm resources absent from `DISPLAY_NAMES` still show proper names (learned
    from `Name_Localised`) rather than title-cased IDs.
 9. Board ship and transfer items; confirm ship locker sync on `ShipLocker`.

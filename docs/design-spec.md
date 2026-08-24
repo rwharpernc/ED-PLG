@@ -1,8 +1,8 @@
 # ED-PLG Design Specification
 
-**Version:** 0.7.0  
+**Version:** 1.0.0  
 **Author:** CMDR Bocheaux  
-**Last updated:** 2026-07-13
+**Last updated:** 2026-08-24
 
 ## 1. Purpose
 
@@ -113,10 +113,14 @@ each showing:
 
 This is the "should I loot this?" view: the capacity bar shows how close the
 backpack is to full, and the item list shows how much of a resource is already
-banked elsewhere.
+banked elsewhere. A category's bar and total turn amber at 90% of capacity — the
+same threshold that triggers the ship locker overlay warning (§8) — and red once
+at or over capacity, clearing back to normal as the count drops back under
+threshold, so a commander glancing at the window sees the same "getting full"
+signal the overlay would otherwise interrupt them with.
 
 Where a capacity is unknown (see §7), the total is shown without a limit rather
-than against a guessed figure.
+than against a guessed figure, and never highlighted.
 
 Window geometry is persisted between sessions in EDMC's config.
 
@@ -137,6 +141,7 @@ Window geometry is persisted between sessions in EDMC's config.
 | FR-11 | Present backpack, ship locker, and carrier locker contents on demand, with per-category totals against capacity. |
 | FR-12 | Never display a guessed capacity; show a bare count when the figure is unknown. |
 | FR-13 | Warn (log + overlay) when a ship locker category crosses 90% of capacity, independently per category. |
+| FR-14 | Highlight a category's capacity bar and total in the inventory window (amber at 90%, red at/over capacity) whenever its capacity is known. |
 
 ## 5. Data Model
 
@@ -306,11 +311,10 @@ These are inherited from the game and EDMC, not bugs in ED-PLG:
 
 ## 12. Future Considerations
 
-Possible enhancements (not committed for v0.7.0):
+Possible enhancements, not yet committed:
 
 - Configurable output format or notification sounds.
 - Search / filter box in the inventory window.
-- Highlighting resources that are at or near capacity.
 - Import full microresource name table from FDevIDs at build time.
 - Preferences for filtering tracked categories and overlay position.
 
