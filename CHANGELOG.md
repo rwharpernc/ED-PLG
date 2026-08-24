@@ -5,6 +5,16 @@ All notable changes to ED-PLG are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0-beta.3] - 2026-08-24
+
+### Added
+
+- **Capacity highlighting in the inventory window.** Each category's
+  progress bar and total (Assets, Goods, Data — across all three tabs)
+  now turns amber at the same 90% threshold that triggers the ship locker
+  overlay warning, and red once the category is at or over capacity,
+  clearing back to normal as the count drops back under threshold.
+
 ## [0.8.0-beta.2] - 2026-08-03
 
 ### Added
