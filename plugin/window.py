@@ -12,7 +12,7 @@ from typing import Dict, Mapping, Optional
 from config import appname, config
 from theme import theme
 
-from .inventory import SHIP_LOCKER_CAPACITY, InventoryTracker, TRACKED_CATEGORIES
+from .inventory import SHIP_LOCKER_CAPACITY, WARNING_THRESHOLD, InventoryTracker, TRACKED_CATEGORIES
 from .names import display_name
 from .suit import SuitState
 
@@ -50,6 +50,15 @@ TABS = (
 STYLE_TREE = "EDPLG.Treeview"
 STYLE_NOTEBOOK = "EDPLG.TNotebook"
 STYLE_TAB = "EDPLG.TNotebook.Tab"
+STYLE_BAR = "EDPLG.Horizontal.TProgressbar"
+STYLE_BAR_NEAR = "EDPLG.Near.Horizontal.TProgressbar"
+STYLE_BAR_FULL = "EDPLG.Full.Horizontal.TProgressbar"
+
+# Capacity highlight colours. NEAR reuses the baseline-note amber so the two
+# "pay attention" cues in this window read as the same signal; FULL escalates
+# to red once a category is actually capped.
+COLOUR_NEAR = "#c07000"
+COLOUR_FULL = "#c0392b"
 
 _window: Optional["InventoryWindow"] = None
 
@@ -78,6 +87,8 @@ def _configure_styles(widget: tk.Misc) -> int:
     style.configure(f"{STYLE_TREE}.Heading", padding=(4, 4))
     style.configure(STYLE_NOTEBOOK, tabmargins=(4, 4, 4, 0))
     style.configure(STYLE_TAB, padding=(14, 7))
+    style.configure(STYLE_BAR_NEAR, background=COLOUR_NEAR)
+    style.configure(STYLE_BAR_FULL, background=COLOUR_FULL)
 
     # Make the selected tab unmistakable: raised, and bold where the font is known.
     if font is not None:
@@ -135,6 +146,12 @@ def _restore_geometry() -> str:
 
     # Keep where the user put it, but restore a usable size.
     return f"{DEFAULT_GEOMETRY}+{position}" if sep else DEFAULT_GEOMETRY
+
+
+def _default_label_colour(widget: tk.Misc) -> str:
+    """The theme's current label text colour, looked up fresh each call."""
+    style = ttk.Style(widget)
+    return style.lookup("TLabel", "foreground") or "black"
 
 
 def _stripe_colour(widget: tk.Misc) -> str:
@@ -284,7 +301,7 @@ class _LocationTab:
             ttk.Label(summary, text=CATEGORY_LABELS[category], width=22, anchor=tk.W).grid(
                 row=row, column=0, sticky=tk.W, pady=3,
             )
-            bar = ttk.Progressbar(summary, maximum=100, length=220)
+            bar = ttk.Progressbar(summary, maximum=100, length=220, style=STYLE_BAR)
             bar.grid(row=row, column=1, padx=(6, 10), sticky=tk.W)
             total = ttk.Label(summary, text="0", width=22, anchor=tk.W)
             total.grid(row=row, column=2, sticky=tk.W)
@@ -340,6 +357,8 @@ class _LocationTab:
                 self._totals[category]["text"] = f"{total}  (capacity unknown)"
                 self._bars[category]["value"] = 0
 
+            self._set_capacity_level(category, total, capacity)
+
         self._tree.delete(*self._tree.get_children())
 
         rows = 0
@@ -356,3 +375,23 @@ class _LocationTab:
 
         if rows == 0:
             self._tree.insert("", tk.END, values=("(nothing stored)", "", ""))
+
+    def _set_capacity_level(
+        self,
+        category: str,
+        total: int,
+        capacity: Optional[int],
+    ) -> None:
+        """Highlight a category's bar and total once it nears or hits capacity."""
+        bar = self._bars[category]
+        label = self._totals[category]
+
+        if capacity and total >= capacity:
+            bar.configure(style=STYLE_BAR_FULL)
+            label.configure(foreground=COLOUR_FULL)
+        elif capacity and total >= capacity * WARNING_THRESHOLD:
+            bar.configure(style=STYLE_BAR_NEAR)
+            label.configure(foreground=COLOUR_NEAR)
+        else:
+            bar.configure(style=STYLE_BAR)
+            label.configure(foreground=_default_label_colour(label))

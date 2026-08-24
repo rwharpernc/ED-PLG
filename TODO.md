@@ -8,11 +8,16 @@ to any version; pick items up as desired.
 
 - [ ] Configurable output format or notification sounds
 - [ ] Search / filter box in the inventory window
-- [ ] Highlight resources that are at or near capacity
 - [ ] Import full microresource name table from FDevIDs at build time
 - [ ] Preferences for filtering tracked categories and overlay position
 
 ## Fixable gaps
+
+- [x] Highlight resources that are at or near capacity. The inventory window
+  (`plugin/window.py`) now colours each category's progress bar and total
+  label amber at the same 90% `WARNING_THRESHOLD` used for ship locker
+  overlay warnings, and red once the category is at or over capacity;
+  clears back to normal once the count drops back under threshold.
 
 - [x] Flight Suit backpack capacity, and per-suit capacity accuracy in general. Rather than
   keep researching a single hardcoded figure, added a Settings-tab control (`plugin/ui.py`,
