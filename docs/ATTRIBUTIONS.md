@@ -19,9 +19,11 @@ by, or maintained by the EDMC development team, nor by the overlay plugin author
 Neither overlay plugin is bundled or redistributed; ED-PLG imports one if the
 commander has installed it.
 
-The overlay integration pattern (try `EDMCOverlay`, fall back to `edmcoverlay`,
-degrade to a no-op) follows the approach used by
-[BGS-Tally](https://github.com/aussig/BGS-Tally).
+## Inspiration
+
+| Project | What it inspired |
+|---------|-------------------|
+| [BGS-Tally](https://github.com/aussig/BGS-Tally) | The overlay integration pattern in `overlay.py`: try `EDMCOverlay`, fall back to `edmcoverlay`, degrade to a no-op if neither is available. |
 
 ## Game & Data References
 
