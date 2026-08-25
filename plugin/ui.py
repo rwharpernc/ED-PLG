@@ -11,21 +11,38 @@ import tkinter as tk
 import myNotebook as nb
 from config import appname, config
 from theme import theme
+from ttkHyperlinkLabel import HyperlinkLabel
 
-from . import suit
+from . import __version__, suit
 from .inventory import CATEGORY_SHORT, TRACKED_CATEGORIES
+from .update import CONFIG_AUTO_UPDATE, RELEASES_PAGE_URL
 
 plugin_name = os.path.basename(os.path.dirname(__file__))
 logger = logging.getLogger(f"{appname}.{plugin_name}")
 
 CONFIG_OVERLAY_ENABLED = "edplg_overlay_enabled"
 
+# Color for the main-panel "Updated to vX" HyperlinkLabel - the only state
+# that widget ever shows text for (see _apply_version_state).
+_UPDATED_COLOR = "#2e7d32"
+
+# How long "Updated to vX" stays up on the main panel before hiding again -
+# long enough to notice, short enough that you don't need to restart EDMC a
+# second time just to clear it.
+_UPDATED_MESSAGE_DURATION_MS = 15_000
+
 _frame: Optional[tk.Frame] = None
 _status_label: Optional[tk.Label] = None
 _last_event_label: Optional[tk.Label] = None
+_version_label: Optional[HyperlinkLabel] = None
 _overlay_var: Optional[tk.BooleanVar] = None
+_auto_update_var: Optional[tk.BooleanVar] = None
 _override_vars: Dict[Tuple[str, str], tk.StringVar] = {}
 _override_defaults: Dict[Tuple[str, str], Optional[int]] = {}
+
+# (kind, version) - kind is one of "normal", "downloading", "downloaded", "updated".
+_version_state: tuple = ("normal", None)
+_updated_clear_scheduled: bool = False
 
 
 def create_plugin_app(
@@ -33,7 +50,7 @@ def create_plugin_app(
     on_show_inventory: Callable[[], None],
 ) -> tk.Frame:
     """Create the main-window frame for EDMC."""
-    global _frame, _status_label, _last_event_label
+    global _frame, _status_label, _last_event_label, _version_label
 
     _frame = tk.Frame(parent)
     _frame.columnconfigure(1, weight=1)
@@ -50,16 +67,102 @@ def create_plugin_app(
     _last_event_label = tk.Label(_frame, text="", wraplength=420, justify=tk.LEFT)
     _last_event_label.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(2, 0))
 
+    # The plugin version itself lives only in the Settings tab (see
+    # create_prefs) - this row is reserved purely for the one-time
+    # "Updated to vX" confirmation right after a staged update takes
+    # effect (see _apply_version_state), so it starts hidden.
+    _version_label = HyperlinkLabel(_frame, text="", url=RELEASES_PAGE_URL, underline=True)
+    _version_label.grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=(2, 0))
+    _version_label.grid_remove()
+    _apply_version_state()
+
     theme.update(_frame)
     return _frame
 
 
+def run_on_main_thread(callback) -> None:
+    """update.py's UpdateManager calls its on_downloading/on_ready
+    callbacks from a background thread (network I/O) - marshal onto the
+    frame's own event loop via after(0, ...) before touching any widget."""
+    if _frame is not None and _frame.winfo_exists():
+        _frame.after(0, callback)
+
+
+def set_update_downloading(version: str) -> None:
+    """An update is being downloaded in the background. Tracked but not
+    currently rendered anywhere - see _apply_version_state."""
+    global _version_state
+    _version_state = ("downloading", version)
+    _apply_version_state()
+
+
+def set_update_downloaded(version: str) -> None:
+    """An update has been staged and will apply on EDMC's next restart.
+    Tracked but not currently rendered anywhere - see _apply_version_state."""
+    global _version_state
+    _version_state = ("downloaded", version)
+    _apply_version_state()
+
+
+def set_update_applied(version: str) -> None:
+    """A staged update just took effect on this restart."""
+    global _version_state
+    _version_state = ("updated", version)
+    _apply_version_state()
+
+
+def _apply_version_state() -> None:
+    """The main-panel version slot only ever shows text for the "updated"
+    kind - "downloading"/"downloaded" are tracked (still logged by
+    update.py itself) but deliberately produce no visible change here. The
+    Settings tab's version label is fully static (see create_prefs) and is
+    never touched by this function at all."""
+    global _updated_clear_scheduled
+    kind, version = _version_state
+    if _version_label is None:
+        return
+
+    if kind == "updated" and version is not None:
+        _version_label.configure(text=f"Updated to v{version}", url=RELEASES_PAGE_URL, foreground=_UPDATED_COLOR)
+        _version_label.grid()
+        if not _updated_clear_scheduled:
+            _updated_clear_scheduled = True
+            _version_label.after(_UPDATED_MESSAGE_DURATION_MS, _clear_updated_state)
+    else:
+        _version_label.grid_remove()
+
+
+def _clear_updated_state() -> None:
+    global _version_state, _updated_clear_scheduled
+    _updated_clear_scheduled = False
+    if _version_state[0] == "updated":
+        _version_state = ("normal", None)
+        try:
+            _apply_version_state()
+        except tk.TclError:
+            pass  # Main window was closed before the timer fired.
+
+
 def create_prefs(parent: nb.Notebook, overlay_available: bool, cmdr: str) -> nb.Frame:
     """Create the ED-PLG tab in EDMC's settings window."""
-    global _overlay_var, _override_vars, _override_defaults
+    global _overlay_var, _auto_update_var, _override_vars, _override_defaults
 
     frame = nb.Frame(parent)
     frame.columnconfigure(0, weight=1)
+
+    # Static - always shows the running version, regardless of auto-update
+    # state (which only ever surfaces on the main panel, and only right
+    # after an update is applied - see _apply_version_state).
+    HyperlinkLabel(
+        frame, text=f"ED-PLG v{__version__}", background=nb.Label().cget("background"), url=RELEASES_PAGE_URL, underline=True,
+    ).grid(row=0, column=0, sticky=tk.W, padx=10, pady=(10, 2))
+
+    _auto_update_var = tk.BooleanVar(value=config.get_bool(CONFIG_AUTO_UPDATE, default=False))
+    nb.Checkbutton(
+        frame,
+        text="Automatically download updates (applied on EDMC's next restart)",
+        variable=_auto_update_var,
+    ).grid(row=1, column=0, sticky=tk.W, padx=10, pady=(0, 10))
 
     _overlay_var = tk.BooleanVar(value=overlay_enabled())
 
@@ -68,18 +171,18 @@ def create_prefs(parent: nb.Notebook, overlay_available: bool, cmdr: str) -> nb.
         text="Show pillage notifications on the in-game overlay",
         variable=_overlay_var,
         state=tk.NORMAL if overlay_available else tk.DISABLED,
-    ).grid(row=0, column=0, sticky=tk.W, padx=10, pady=(10, 0))
+    ).grid(row=2, column=0, sticky=tk.W, padx=10, pady=(10, 0))
 
     hint = (
         "Requires EDMCModernOverlay (or EDMCOverlay)."
         if overlay_available
         else "Install EDMCModernOverlay to enable this."
     )
-    nb.Label(frame, text=hint).grid(row=1, column=0, sticky=tk.W, padx=10, pady=(2, 10))
+    nb.Label(frame, text=hint).grid(row=3, column=0, sticky=tk.W, padx=10, pady=(2, 10))
 
     _override_vars = {}
     _override_defaults = {}
-    row = _build_capacity_overrides(frame, cmdr, start_row=2)
+    row = _build_capacity_overrides(frame, cmdr, start_row=4)
 
     return frame
 
@@ -185,6 +288,8 @@ def save_prefs(cmdr: str) -> bool:
     """Persist settings from the prefs tab; returns the new overlay state."""
     if _overlay_var is not None:
         config.set(CONFIG_OVERLAY_ENABLED, _overlay_var.get())
+    if _auto_update_var is not None:
+        config.set(CONFIG_AUTO_UPDATE, _auto_update_var.get())
 
     for (loadout_id, category), var in _override_vars.items():
         text = var.get().strip()

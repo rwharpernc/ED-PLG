@@ -5,6 +5,24 @@ All notable changes to ED-PLG are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - Unreleased
+
+### Added
+
+- **Auto-update, off by default (opt-in, not opt-out).** Once enabled in
+  Settings, ED-PLG checks GitHub Releases once per EDMC start and, if a
+  newer one exists, downloads and stages it over the current install
+  (`update.py`), taking effect on EDMC's next restart. The plugin version
+  now lives only in the Settings tab (a static link to the Releases
+  page); the main panel stays silent about it except for a brief
+  "Updated to vX.Y.Z" right after a staged update takes effect. A
+  `disable-auto-update.txt` file in the plugin folder overrides the
+  Settings checkbox unconditionally, for a hand-edited local copy. Uses
+  stdlib `urllib`/`zipfile` only, not a pip package, keeping "no pip
+  dependencies" true. Modeled on the same mechanism in EDPPMT/EDMMM,
+  aligned to the same opt-in-off-by-default, Settings-only-version
+  direction across all three.
+
 ## [1.0.0] - 2026-08-24
 
 ### Changed

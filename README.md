@@ -5,7 +5,7 @@
 A lightweight [Elite Dangerous Market Connector](https://github.com/EDCD/EDMarketConnector) (EDMC) plugin for *Elite Dangerous: Odyssey*. ED-PLG tracks on-foot microresources — the components, items, and data you spend on suit and weapon upgrades — and tells you what you just looted, how much of it you now own, and whether you still have room to carry it.
 
 **Author:** CMDR Bocheaux  
-**Version:** 1.0.0  
+**Version:** 1.1.0  
 **License:** [MIT](LICENSE)
 
 ---
@@ -77,6 +77,7 @@ The final layout must look like this:
     ├── overlay.py
     ├── window.py
     ├── names.py
+    ├── update.py
     └── ui.py
 ```
 
@@ -129,8 +130,19 @@ If the overlay throws an error at any point, ED-PLG disables it for the session 
 
 | Setting | Default | Description |
 |---------|---------|-------------|
+| Automatically download updates | **Off** | Opt-in; see [Updates](#updates) below |
 | Show pillage notifications on the in-game overlay | On | Greyed out when no overlay plugin is installed |
 | Suit Backpack Capacity | Unengineered default per suit | One editable row per suit loadout you've worn; see [Backpack capacity](#backpack-capacity-defaults-plus-your-own-numbers) above |
+
+## Updates
+
+**Off by default — this is opt-in, not opt-out.** Turn on "Automatically download updates" in **File → Settings → ED-PLG** if you want it: once per EDMC launch, the plugin then checks GitHub for a newer release and, if there is one, downloads and stages it automatically — it takes effect the next time you restart EDMC. Nothing is sent in that check beyond the request itself (no telemetry, no inventory data).
+
+The plugin version lives only in the Settings tab (a static link to the [latest release on GitHub](https://github.com/rwharpernc/ED-PLG/releases/latest)) — the main panel stays silent about it except for one thing: right after a staged update takes effect, it briefly shows "Updated to vX.Y.Z" for a few seconds, then goes back to showing nothing there.
+
+A backup of your current install is kept (the 3 most recent, in `backups/` inside the plugin folder) before each update is applied, in case anything goes wrong.
+
+If you turn it on for a copy you're actively hand-editing (developing, not just running it), drop an empty `disable-auto-update.txt` file directly in the plugin folder — that disables auto-update for that install regardless of the Settings checkbox, so a background check can't clobber in-progress work.
 
 ## Troubleshooting
 
@@ -269,8 +281,11 @@ Module map, in rough order of the data flow described above:
 | [ui.py](plugin/ui.py) | EDMC main-window panel and settings tab |
 | [window.py](plugin/window.py) | The tabbed inventory window |
 | [overlay.py](plugin/overlay.py) | In-game overlay client |
+| [update.py](plugin/update.py) | Checks GitHub Releases and self-updates (see [Updates](#updates) above) |
 
 Dependencies point one way: `load.py` knows about everything; `ui.py` does not import `load.py` (the Inventory button is wired through a callback); `window.py` reads a `snapshot()` from the tracker rather than reaching into it.
+
+**Auto-update is off by default, but can still overwrite a local test install if you've turned it on for that copy.** A plugin folder dropped into your EDMC plugins directory for testing looks, to `update.py`, exactly like a real install - if "Automatically download updates" is enabled there and the local build is older than the latest GitHub Release, EDMC will download and stage that release over your hand-edited files on its next restart. Drop an empty `disable-auto-update.txt` file in the plugin folder to override the checkbox unconditionally if you want it on elsewhere while still hand-editing this copy.
 
 The tracker, names, suit, overlay, and window modules can all be exercised **outside EDMC** by stubbing the `config` and `theme` modules in `sys.modules` and replaying real journal lines through the tracker — useful, since the alternative is flying to a settlement to test a one-line change.
 

@@ -1,8 +1,8 @@
 # ED-PLG Technical Specification
 
-**Version:** 1.0.0  
+**Version:** 1.1.0  
 **Author:** CMDR Bocheaux  
-**Last updated:** 2026-08-24
+**Last updated:** 2026-08-25
 
 ## 1. Overview
 
@@ -30,6 +30,7 @@ ED-PLG/
 │   ├── overlay.py          # PillageOverlay (EDMCModernOverlay client)
 │   ├── window.py           # Tabbed inventory Toplevel
 │   ├── names.py            # ID → display name mapping
+│   ├── update.py           # Self-update (GitHub Releases check + stage)
 │   └── ui.py               # Tkinter panel + settings tab
 ├── scripts/build.mjs       # Copies plugin/ → dist/EDPLG/
 ├── docs/                   # Specifications and attributions
@@ -45,7 +46,7 @@ ED-PLG/
 
 | Function | Module | Description |
 |----------|--------|-------------|
-| `plugin_start3(plugin_dir: str) -> str` | `load.py` | Initialisation; returns `"ED-PLG"`. |
+| `plugin_start3(plugin_dir: str) -> str` | `load.py` | Initialisation; returns `"ED-PLG"`. Also runs `update.check_applied_update()` and kicks off `update.UpdateManager`'s background check - see §14. |
 | `plugin_stop() -> None` | `load.py` | Shutdown hook; clears overlay and closes the window. |
 | `plugin_app(parent: tk.Frame) -> tk.Frame` | `load.py` | Creates main-window UI frame. |
 | `plugin_prefs(parent, cmdr, is_beta) -> nb.Frame` | `load.py` | Creates the settings tab. |
@@ -67,6 +68,7 @@ from config import appname          # Logger naming
 from config import config           # Settings + window geometry persistence
 from theme import theme             # UI theming (ui.py, window.py)
 import myNotebook as nb             # Settings tab widgets (ui.py)
+from ttkHyperlinkLabel import HyperlinkLabel  # Version/update link (ui.py)
 ```
 
 No other core EDMC modules are imported. Inventory data is read from the
@@ -364,16 +366,23 @@ Thread-safe UI updates (called only from `journal_entry` on main thread):
 
 ```python
 create_plugin_app(parent: tk.Frame, on_show_inventory: Callable[[], None]) -> tk.Frame
-create_prefs(parent: nb.Notebook, overlay_available: bool) -> nb.Frame
+create_prefs(parent: nb.Notebook, overlay_available: bool, cmdr: str) -> nb.Frame
 overlay_enabled() -> bool
-save_prefs() -> bool
+save_prefs(cmdr: str) -> bool
 set_status(message: str) -> None
 set_last_event(message: str) -> None
+run_on_main_thread(callback) -> None
+set_update_downloading(version: str) -> None
+set_update_downloaded(version: str) -> None
+set_update_applied(version: str) -> None
 ```
 
 Uses `theme.update(frame)` for EDMC dark/light theme consistency. `ui.py` does not
 import `load.py`; the Inventory button is wired via the `on_show_inventory` callback
-to keep the dependency one-way.
+to keep the dependency one-way. `ui.py` does import `update.py` (for
+`CONFIG_AUTO_UPDATE`/`RELEASES_PAGE_URL`), a one-way dependency in the other
+direction - `update.py` never imports `ui.py` or reaches into Tkinter itself. See
+§14 for the last four functions.
 
 Config keys:
 
@@ -381,6 +390,8 @@ Config keys:
 |-----|------|---------|
 | `edplg_overlay_enabled` | bool | Overlay toggle (default on) |
 | `edplg_window_geometry` | str | Inventory window position/size |
+| `edplg_auto_update` | bool | Auto-update toggle (default **off** - opt-in) |
+| `edplg_last_version` | str | Internal - see §14, `check_applied_update()` |
 
 ### 6.7 `load.py` — event dispatch
 
@@ -397,6 +408,22 @@ f"+{delta}  {label}: {combined_total}"                           # overlay
 `combined_total` = backpack + ship locker + carrier locker count for the resource.
 
 Return value: last pillage message string (displayed in EDMC status area) or `None`.
+
+### 6.8 `update.py` — self-update
+
+See §14 for the full mechanics. Public surface:
+
+```python
+current_version() -> str
+check_applied_update() -> Optional[str]
+UpdateManager(plugin_dir: str, on_ready: Callable[[str], None], on_downloading: Optional[Callable[[str], None]] = None)
+UpdateManager.check_async() -> None
+CONFIG_AUTO_UPDATE: str   # "edplg_auto_update"
+RELEASES_PAGE_URL: str    # imported by ui.py for its Settings-tab link
+```
+
+No Tkinter dependency; `check_async()` reads `CONFIG_AUTO_UPDATE` via `config`
+directly rather than through `ui.py`, so this module never imports `ui.py`.
 
 ## 7. Suit Backpack Capacity
 
@@ -573,8 +600,11 @@ modules in `sys.modules` and replaying real journal lines through the tracker.
 | EDMC 5.x | Runtime | Provides Python, Tkinter, journal monitor |
 | EDMCModernOverlay | Optional | In-game overlay; legacy EDMCOverlay also works. Absent = feature disabled, plugin still loads |
 | Node.js 18+ | Build only | `npm run build` |
+| GitHub Releases API | Optional (auto-update, off by default) | `update.py`'s only network call - see §14 |
 
-No pip dependencies. Plugin uses only Python stdlib + EDMC-provided modules.
+No pip dependencies. Plugin uses only Python stdlib + EDMC-provided modules,
+even with auto-update enabled (`update.py` uses `urllib`/`zipfile`, not a pip
+package).
 
 ## 13. References
 
@@ -582,3 +612,84 @@ No pip dependencies. Plugin uses only Python stdlib + EDMC-provided modules.
 - [Attributions & Credits](./ATTRIBUTIONS.md)
 - [EDMC PLUGINS.md](https://github.com/EDCD/EDMarketConnector/blob/main/PLUGINS.md)
 - [EDCD/FDevIDs microresources.csv](https://github.com/EDCD/FDevIDs)
+
+## 14. Self-Update (`update.py`)
+
+`UpdateManager.check_async()` is called once, from `plugin_start3`. It's a
+no-op if either the `edplg_auto_update` config setting (**opt-in, default
+off**, toggled from the Settings tab) is off, or a `disable-auto-update.txt`
+file exists directly in `plugin_dir` — a hardcoded escape hatch for a folder
+being actively hand-edited (e.g. local development), independent of and not
+visible in Settings.
+
+Otherwise it spawns a daemon thread that:
+
+1. **GETs** `https://api.github.com/repos/rwharpernc/ED-PLG/releases/latest`
+   (skips draft/prerelease responses) and compares its `tag_name` against
+   `plugin.__version__`, both parsed as plain `(major, minor, patch)` integer
+   tuples. A newer *or equal* remote version is a no-op.
+2. If newer, calls `on_downloading(version)`, then **downloads** the first
+   `.zip` release asset to `plugin_dir/updates/`.
+3. **Backs up** the current plugin folder to a timestamped zip in
+   `plugin_dir/backups/` (walking `plugin_dir`, excluding `updates/`,
+   `backups/`, and `__pycache__/`), then trims backups down to the 3 most
+   recent.
+4. **Extracts** the downloaded zip over `plugin_dir`, stripping the top-level
+   `EDPLG/` folder the release zip is packaged with (see
+   `scripts/package.mjs`) — so files land directly in `plugin_dir`.
+5. Calls `on_ready(version)` (the callback passed to `UpdateManager.__init__`).
+
+Both `on_downloading` and `on_ready` are plain callbacks handed to
+`UpdateManager.__init__`; `load.py` wraps each in a lambda that calls
+`ui.run_on_main_thread(...)`, which marshals onto the Tk main thread via
+`frame.after(0, ...)` before touching any widget, since `update.py` itself
+has no Tkinter dependency and runs entirely off the main thread up to this
+point.
+
+Nothing here reloads running code — Python already has the old modules
+loaded in memory for this process. The staged files only take effect the
+*next* time EDMC starts.
+
+### 14.1 Update status UI
+
+**The plugin version lives only in the Settings tab.** `create_prefs` builds
+a static `ttkHyperlinkLabel.HyperlinkLabel` (`ED-PLG v{__version__}`, linking
+to `update.RELEASES_PAGE_URL`) once, at creation, and nothing ever touches it
+again — no color, no text changes, regardless of update state.
+
+The main panel keeps one `ui._version_label` (created empty and
+`grid_remove()`d immediately, on its own row below the status/last-event
+rows) purely for a one-time "Updated to vX.Y.Z" confirmation. It's driven by
+a module-level `ui._version_state` tuple (`kind`, `version`), applied by
+`ui._apply_version_state()`:
+
+| Kind | Main-panel label | Set by |
+|------|-------------------|--------|
+| `normal` | hidden (`grid_remove()`) | default / after the "updated" message clears |
+| `downloading` | hidden - tracked, not shown | `ui.set_update_downloading`, from `UpdateManager`'s `on_downloading` |
+| `downloaded` | hidden - tracked, not shown | `ui.set_update_downloaded`, from `on_ready` |
+| `updated` | `Updated to vX.Y.Z`, green `#2e7d32`, `grid()`ed back in | `ui.set_update_applied`, from `plugin_start3` |
+
+`downloading`/`downloaded` still update `_version_state` (so `update.py`'s
+own `logger.info` calls remain the only record of them) but
+`_apply_version_state()` deliberately renders nothing for either — a design
+choice to keep the main panel visually quiet, not an oversight.
+
+`update.check_applied_update()` detects the `updated` case: it reads the
+`edplg_last_version` config value written on the *previous* run, compares it
+to `plugin.__version__`, and rewrites it to the current version every run. A
+mismatch (and a non-empty previous value, so this doesn't fire on a
+first-ever install) means a staged update just took effect on this restart,
+and `plugin_start3` calls `ui.set_update_applied(version)` immediately —
+before `plugin_app` has created any widget, since `_apply_version_state()`
+is a no-op until `_version_label` exists, and `create_plugin_app` calls it
+again at the end of widget construction to pick up whatever state is
+already current.
+
+The `updated` state doesn't stay up indefinitely: `_apply_version_state()`
+schedules `_clear_updated_state()` via
+`_version_label.after(_UPDATED_MESSAGE_DURATION_MS, ...)` (15s) the first
+time it applies an `updated` kind, guarded by `_updated_clear_scheduled` so
+a second call doesn't schedule a duplicate timer. When it fires, it reverts
+`_version_state` to `("normal", None)` and re-applies, which
+`grid_remove()`s the label.

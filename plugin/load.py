@@ -21,6 +21,7 @@ from . import __version__
 from .inventory import CATEGORY_SHORT, InventoryTracker, TRACKED_CATEGORIES
 from .overlay import PillageOverlay
 from .suit import SuitState
+from .update import UpdateManager, check_applied_update
 from . import names
 from . import suit
 from . import ui
@@ -52,17 +53,42 @@ _tracker = InventoryTracker()
 _overlay = PillageOverlay()
 _suit = SuitState()
 _ui_frame: Optional[tk.Frame] = None
+_updater: Optional[UpdateManager] = None
+"""Kept alive purely so the background check thread's bound method holds a
+live reference for its lifetime - not read again after plugin_start3."""
 
 
 def plugin_start3(plugin_dir: str) -> str:
     """Load ED-PLG into EDMarketConnector."""
+    global _updater
     logger.info("ED-PLG v%s starting from %s", __version__, plugin_dir)
     names.load_learned_names()
     suit.load_overrides()
     _overlay.set_enabled(ui.overlay_enabled())
     if not _overlay.available:
         logger.info("No overlay plugin found; pillage overlay disabled")
+
+    applied_version = check_applied_update()
+    if applied_version is not None:
+        logger.info("ED-PLG updated to v%s", applied_version)
+        ui.set_update_applied(applied_version)
+
+    _updater = UpdateManager(plugin_dir, on_ready=_on_update_ready, on_downloading=_on_update_downloading)
+    _updater.check_async()
+
     return "ED-PLG"
+
+
+def _on_update_downloading(version: str) -> None:
+    # Called from the update-check background thread - marshal onto the Tk
+    # main thread before touching any widgets.
+    ui.run_on_main_thread(lambda: ui.set_update_downloading(version))
+
+
+def _on_update_ready(version: str) -> None:
+    # Called from the update-check background thread - marshal onto the Tk
+    # main thread before touching any widgets.
+    ui.run_on_main_thread(lambda: ui.set_update_downloaded(version))
 
 
 def plugin_stop() -> None:
