@@ -6,7 +6,12 @@ to any version; pick items up as desired.
 
 ## Features (design-spec §11)
 
-- [ ] Import full microresource name table from FDevIDs at build time
+- [x] Import full microresource name table from FDevIDs at build time. A new
+  `npm run update-names` script (`scripts/update-names.mjs`) fetches
+  EDCD/FDevIDs' `microresources.csv` and regenerates
+  `plugin/names_fdevids.py` (190 names) as a maintenance step separate from
+  the ordinary build; `names.py`'s hand-curated table is now a small
+  override on top of it. Shipped in 1.1.0 (unreleased).
 - [x] Configurable output format or notification sounds. Settings now has a
   **Pillage message** template field (`{item}`/`{total}` placeholders) and a
   **Play a sound on pickup** checkbox (Windows-only, via stdlib `winsound`;

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Comprehensive resource names, imported from FDevIDs.** A new
+  `npm run update-names` maintenance script (`scripts/update-names.mjs`)
+  fetches EDCD/FDevIDs' `microresources.csv` and regenerates
+  `plugin/names_fdevids.py` (190 Component/Item/Data names, up from the
+  ~50-entry hand-curated table) — not part of the ordinary build, so the
+  plugin itself still never touches the network for it. `names.py`'s
+  hand-curated `DISPLAY_NAMES` is trimmed to only the entries FDevIDs
+  doesn't (yet) cover and now takes priority as an override rather than
+  being the primary table.
 - **Configurable pillage message and a pickup notification sound.** Settings
   now has a **Pillage message** template field (`{item}`/`{total}`
   placeholders, falling back to the default on a blank or invalid template)

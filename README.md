@@ -25,7 +25,7 @@ That total is the number that matters when you are deciding whether a pickup is 
 - **In-game overlay alerts** via [EDMCModernOverlay](https://github.com/SweetJonnySauce/EDMCModernOverlay) (optional — the plugin works fine without it)
 - **Inventory window** — a tabbed view of everything you hold, with capacity bars per category, so you can see at a glance how close your backpack is to full
 - **Ship locker capacity warning** — an in-game overlay alert when a ship locker category hits 90% full, so you're not caught having to drop loot before you can offload it (at your ship, or remotely via an Apex shuttle)
-- **Real names** for Frontier's internal resource IDs (`manufacturinginstructions` → *Manufacturing Instructions*)
+- **Real names** for Frontier's internal resource IDs (`manufacturinginstructions` → *Manufacturing Instructions*), covering essentially every Odyssey microresource via a table imported from [EDCD/FDevIDs](https://github.com/EDCD/FDevIDs)
 
 **Deliberately out of scope:** ship engineering materials (Raw, Manufactured, Encoded) and commodity cargo. Those are separate game systems. ED-PLG deals only in Odyssey microresources — the stuff that upgrades your ground gear.
 
@@ -78,6 +78,7 @@ The final layout must look like this:
     ├── sound.py
     ├── window.py
     ├── names.py
+    ├── names_fdevids.py
     ├── update.py
     └── ui.py
 ```
@@ -222,12 +223,13 @@ Consumables (grenades, energy cells) are counted internally to keep the backpack
 Frontier's journal identifies resources by internal ID (`manufacturinginstructions`). Display names are resolved in this order:
 
 1. `Name_Localised` from the journal event — the game's own label, correct and localised
-2. A curated override table in [names.py](plugin/names.py)
-3. Names learned from `Name_Localised` earlier in this session or a previous one — the
+2. A small curated override table in [names.py](plugin/names.py)
+3. A generated table imported from [EDCD/FDevIDs](https://github.com/EDCD/FDevIDs)' `microresources.csv` ([names_fdevids.py](plugin/names_fdevids.py)) — covers essentially every Component/Item/Data microresource in the game
+4. Names learned from `Name_Localised` earlier in this session or a previous one — the
    learned cache is persisted to EDMC's config and restored on the next launch
-4. A title-cased fallback
+5. A title-cased fallback
 
-Because the game supplies `Name_Localised` for essentially every resource whose label differs from its ID, the curated table rarely needs to grow. It exists to fix the cases the fallback mangles — acronyms like `rdx` → **RDX** — not to enumerate the game.
+The generated table (step 3) does the heavy lifting — it's refreshed from FDevIDs by running `npm run update-names` (a maintenance step, not part of the normal build; see [For Developers](#for-developers) below) and committed like any other change, so the *running* plugin never touches the network for it. The curated table (step 2) stays small on purpose: it only covers internal names ED-PLG has seen in-game that FDevIDs doesn't (yet) list.
 
 ### Backpack capacity: defaults plus your own numbers
 
@@ -269,17 +271,18 @@ See [Design Specification — Known Limitations](docs/design-spec.md#11-known-li
 ## For Developers
 
 ```bash
-npm run build     # copies plugin/ → dist/EDPLG/, stripping __pycache__
-npm run package   # does the above, then zips it to dist/EDPLG-v<version>.zip
+npm run build         # copies plugin/ → dist/EDPLG/, stripping __pycache__
+npm run package       # does the above, then zips it to dist/EDPLG-v<version>.zip
+npm run update-names  # regenerates plugin/names_fdevids.py from FDevIDs (maintenance, needs network)
 ```
 
-The build script is a convenience, not a compiler — the plugin *is* its source. Edit `plugin/`, rebuild if you like, copy to EDMC, restart. `npm run package`'s zip is the same artifact published on the Releases page.
+The build script is a convenience, not a compiler — the plugin *is* its source. Edit `plugin/`, rebuild if you like, copy to EDMC, restart. `npm run package`'s zip is the same artifact published on the Releases page. `update-names` is the one exception: it's a separate, occasional maintenance step (not run by `build`/`package`) that hits the network to pull the latest FDevIDs data — see [Resource names](#resource-names) above.
 
 ```
 ED-PLG/
 ├── plugin/           # Python source — this is the plugin
 ├── docs/             # Specifications and credits
-├── scripts/          # build.mjs, package.mjs
+├── scripts/          # build.mjs, package.mjs, update-names.mjs
 ├── dist/EDPLG/       # Build output (gitignored)
 ├── CHANGELOG.md
 ├── LICENSE
@@ -294,6 +297,7 @@ Module map, in rough order of the data flow described above:
 | [inventory.py](plugin/inventory.py) | The three stores; applies baselines, deltas, and CAPI data |
 | [suit.py](plugin/suit.py) | Current suit and the backpack capacity table |
 | [names.py](plugin/names.py) | Internal ID → display name resolution |
+| [names_fdevids.py](plugin/names_fdevids.py) | Generated: FDevIDs microresource names — do not hand-edit; regenerate with `npm run update-names` |
 | [ui.py](plugin/ui.py) | EDMC main-window panel and settings tab |
 | [window.py](plugin/window.py) | The tabbed inventory window |
 | [overlay.py](plugin/overlay.py) | In-game overlay client |
@@ -304,7 +308,7 @@ Dependencies point one way: `load.py` knows about everything; `ui.py` does not i
 
 **Auto-update is off by default, but can still overwrite a local test install if you've turned it on for that copy.** A plugin folder dropped into your EDMC plugins directory for testing looks, to `update.py`, exactly like a real install - if "Automatically download updates" is enabled there and the local build is older than the latest GitHub Release, EDMC will download and stage that release over your hand-edited files on its next restart. Drop an empty `disable-auto-update.txt` file in the plugin folder to override the checkbox unconditionally if you want it on elsewhere while still hand-editing this copy.
 
-The tracker, names, suit, overlay, and window modules can all be exercised **outside EDMC** by stubbing the `config` and `theme` modules in `sys.modules` and replaying real journal lines through the tracker — useful, since the alternative is flying to a settlement to test a one-line change.
+The tracker, names, suit, overlay, sound, and window modules can all be exercised **outside EDMC** by stubbing the `config` and `theme` modules in `sys.modules` and replaying real journal lines through the tracker — useful, since the alternative is flying to a settlement to test a one-line change.
 
 See the [Technical Specification](docs/tech-spec.md) for the full API surface, event schemas, and handler behaviour.
 

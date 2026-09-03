@@ -7,68 +7,44 @@ from typing import Dict, Optional
 
 from config import config
 
+from .names_fdevids import FDEVIDS_DISPLAY_NAMES
+
 # EDMC config key for names learned in previous sessions.
 CONFIG_LEARNED_NAMES = "edplg_learned_names"
 
-# Upgrade-relevant Odyssey microresources (Component, Item, Data).
-# Extend this dict as new resources are discovered in-game.
+# Hand-curated overrides/additions, checked before FDEVIDS_DISPLAY_NAMES.
+# The bulk of the table now comes from FDevIDs (names_fdevids.py, regenerated
+# by `npm run update-names` — see docs/tech-spec.md); these are internal
+# names seen (or expected) in-game that FDevIDs' microresources.csv doesn't
+# (yet) list under this exact symbol. Kept as a safety net rather than
+# deleted outright — remove an entry here once FDevIDs picks it up.
 # Keys are canonicalised (lowercase, no spaces) Frontier internal names.
 DISPLAY_NAMES: Dict[str, str] = {
-    # Components
-    "weaponcomponent": "Weapon Component",
-    "healthmonitor": "Health Monitor",
-    "powerconverter": "Power Converter",
-    "powerregulator": "Power Regulator",
-    "largecapacitypowerregulator": "Power Regulator",
-    "oxygenicbacteria": "Oxygenic Bacteria",
-    "epinephrine": "Epinephrine",
-    "carbonfibreplating": "Carbon Fibre Plating",
-    "graphene": "Graphene",
-    "microelectrode": "Micro Electrode",
-    "opticalfibre": "Optical Fibre",
-    "ionisedgas": "Ionised Gas",
-    "epoxyadhesive": "Epoxy Adhesive",
-    "rdx": "RDX",
-    "metalcoil": "Metal Coil",
-    "microsupercapacitor": "Micro Supercapacitor",
-    "microthrusters": "Micro Thrusters",
+    "biologicaldata": "Biological Data",
+    "compositionalanalysis": "Compositional Analysis",
+    "datamaterial": "Data Material",
+    "electromagneticcoil": "Electromagnetic Coil",
+    "energyconverter": "Energy Converter",
     "microswarmmissiles": "Micro Swarm Missiles",
-    "microhydraulics": "Micro Hydraulics",
     "microthermalcooler": "Micro Thermal Cooler",
     "microtransmitter": "Micro Transmitter",
     "microweavefiltering": "Micro Weave Filtering",
-    "thermalcoolingunits": "Thermal Cooling Units",
-    "viscoelasticpolymer": "Viscoelastic Polymer",
-    # Items
-    "suitschematic": "Suit Schematic",
-    "weaponschematic": "Weapon Schematic",
-    "settlementdefenceplans": "Settlement Defence Plans",
-    "reactivearmour": "Reactive Armour",
-    "stabilisingcompound": "Stabilising Compound",
-    "energyconverter": "Energy Converter",
-    "electromagneticcoil": "Electromagnetic Coil",
-    "memorychip": "Memory Chip",
-    "personalcomputer": "Personal Computer",
-    "datamaterial": "Data Material",
-    # Data
-    "manufacturinginstructions": "Manufacturing Instructions",
-    "biologicaldata": "Biological Data",
-    "weaponexperimentals": "Weapon Experimentals",
-    "weaponblueprint": "Weapon Blueprint",
-    "suitblueprint": "Suit Blueprint",
-    "weaponinstructions": "Weapon Instructions",
-    "suitinstructions": "Suit Instructions",
-    "settlementprospects": "Settlement Prospects",
-    "settlementplans": "Settlement Plans",
-    "geneticrepairmeds": "Genetic Repair Meds",
-    "combatantperformance": "Combatant Performance",
-    "compositionalanalysis": "Compositional Analysis",
     "networkarchitecture": "Network Architecture",
     "networksecurity": "Network Security",
-    "reactoroutputreview": "Reactor Output Review",
-    "reactorbalancingreport": "Reactor Balancing Report",
+    "powerconverter": "Power Converter",
+    "powerregulator": "Power Regulator",
     "radiationreport": "Radiation Report",
-    "spectralanalysisdata": "Spectral Analysis Data",
+    "reactivearmour": "Reactive Armour",
+    "reactorbalancingreport": "Reactor Balancing Report",
+    "settlementplans": "Settlement Plans",
+    "settlementprospects": "Settlement Prospects",
+    "stabilisingcompound": "Stabilising Compound",
+    "suitblueprint": "Suit Blueprint",
+    "suitinstructions": "Suit Instructions",
+    "thermalcoolingunits": "Thermal Cooling Units",
+    "weaponblueprint": "Weapon Blueprint",
+    "weaponexperimentals": "Weapon Experimentals",
+    "weaponinstructions": "Weapon Instructions",
 }
 
 
@@ -132,9 +108,10 @@ def display_name(
     """
     Resolve a journal item name to a human-readable label.
 
-    Prefers the journal's Name_Localised when present, then our mapping, then a
-    name learned from an earlier journal entry, then a title-cased fallback
-    derived from the internal ID.
+    Prefers the journal's Name_Localised when present, then our hand-curated
+    overrides (DISPLAY_NAMES), then the generated FDevIDs table
+    (FDEVIDS_DISPLAY_NAMES), then a name learned from an earlier journal
+    entry, then a title-cased fallback derived from the internal ID.
     """
     if localised_name:
         return localised_name
@@ -142,6 +119,8 @@ def display_name(
     key = canonicalise(internal_name)
     if key in DISPLAY_NAMES:
         return DISPLAY_NAMES[key]
+    if key in FDEVIDS_DISPLAY_NAMES:
+        return FDEVIDS_DISPLAY_NAMES[key]
     if key in _LEARNED_NAMES:
         return _LEARNED_NAMES[key]
 

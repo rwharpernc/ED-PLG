@@ -28,11 +28,14 @@ ED-PLG/
 │   ├── inventory.py        # InventoryTracker
 │   ├── suit.py             # SuitState + backpack capacity table
 │   ├── overlay.py          # PillageOverlay (EDMCModernOverlay client)
+│   ├── sound.py            # PillageSound (optional pickup beep, winsound)
 │   ├── window.py           # Tabbed inventory Toplevel
 │   ├── names.py            # ID → display name mapping
+│   ├── names_fdevids.py    # Generated: FDevIDs microresource names (do not hand-edit)
 │   ├── update.py           # Self-update (GitHub Releases check + stage)
 │   └── ui.py               # Tkinter panel + settings tab
 ├── scripts/build.mjs       # Copies plugin/ → dist/EDPLG/
+├── scripts/update-names.mjs # Regenerates names_fdevids.py from FDevIDs (network; not part of build)
 ├── docs/                   # Specifications and attributions
 ├── dist/EDPLG/             # Build artefact (gitignored)
 ├── LICENSE                 # MIT
@@ -270,6 +273,7 @@ the override mechanism.
 class PillageOverlay:
     @property available -> bool          # an overlay module was importable
     def set_enabled(enabled: bool) -> None
+    def set_position(x: int, y: int) -> None   # clamped to MAX_ORIGIN_X/Y
     def notify(internal_name: str, text: str, *, colour: str = COLOUR, ttl: int = TTL_SECONDS) -> None
     def clear() -> None
 ```
@@ -280,7 +284,8 @@ class PillageOverlay:
 | `MAX_LINES` | 5 | Stack depth |
 | `TTL_SECONDS` | 8 | Default per-line lifetime |
 | `COLOUR` | `#ffbf00` | Default (pillage) line colour |
-| `ORIGIN_X` / `ORIGIN_Y` | 900 / 120 | Legacy 1280×960 virtual screen |
+| `DEFAULT_ORIGIN_X` / `DEFAULT_ORIGIN_Y` | 900 / 120 | Default overlay origin |
+| `MAX_ORIGIN_X` / `MAX_ORIGIN_Y` | 1280 / 960 | Legacy virtual screen bounds; `set_position()` clamps to these |
 | `LINE_HEIGHT` | 18 | Row spacing |
 
 Behaviour: the client is created lazily on first `notify()`. Lines are held as
@@ -292,6 +297,26 @@ pickups. `colour`/`ttl` default to the pillage look; callers pass their own to
 render a visually distinct message. Rows vacated by expiry are blanked by
 sending empty text (the legacy clear idiom). Any exception from the overlay client
 disables the feature for the session rather than propagating into `journal_entry`.
+The origin defaults to `(DEFAULT_ORIGIN_X, DEFAULT_ORIGIN_Y)` and is only ever
+changed via `set_position()`, which `load.py` calls with `ui.overlay_position()`
+at startup and after Settings is saved (see §6.6).
+
+### 6.3.1 `sound.py` — `PillageSound`
+
+```python
+class PillageSound:
+    @property available -> bool          # winsound importable (Windows only)
+    def set_enabled(enabled: bool) -> None
+    def play() -> None
+```
+
+Optional, off by default. `play()` calls `winsound.MessageBeep(winsound.MB_ICONASTERISK)`
+when enabled and available; `load.py` calls it once per `BackpackChange` that produced
+at least one announced pillage message (not once per item), so a multi-item loot pull
+beeps once. `winsound` is a Python stdlib module but Windows-only, so `available` is
+`False` on other platforms — mirrors `PillageOverlay.available`'s "optional dependency
+degrades silently" shape rather than adding a real dependency. Any exception from
+`winsound` disables the feature for the session, same as the overlay.
 
 ### 6.4 `window.py` — inventory window
 
@@ -307,6 +332,15 @@ opening a second. A `ttk.Notebook` holds one `_LocationTab` per store, each with
 
 `SHIP_LOCKER_CAPACITY` is 1000 per category. The carrier locker has no published
 microresource cap and shows totals without one.
+
+**Filter box.** A single `ttk.Entry` above the notebook, bound via
+`tk.StringVar.trace_add("write", ...)` to `InventoryWindow.refresh()` — every
+keystroke re-runs the normal refresh path rather than patching the tree in place.
+`_LocationTab.update()` takes the filter text and applies it only to which rows are
+inserted into the `Treeview` (a case-insensitive substring match against
+`display_name()`); the per-category totals and capacity bars are computed from the
+unfiltered `store` first, so they always reflect the true contents. Filter state is
+per-window (not persisted) and applies across all three tabs simultaneously.
 
 **Sizing.** Default 900×650, minimum 720×420. Geometry persists to `config` under
 `edplg_window_geometry`; `_restore_geometry()` discards a saved size below the
@@ -341,7 +375,7 @@ locker) always renders normal.
 ### 6.5 `names.py`
 
 ```python
-DISPLAY_NAMES: Dict[str, str]   # canonical_id → display label (curated)
+DISPLAY_NAMES: Dict[str, str]   # canonical_id → display label (curated overrides/additions)
 _LEARNED_NAMES: Dict[str, str]  # canonical_id → Name_Localised, persisted across sessions
 canonicalise(name: str) -> str
 remember(internal_name, localised_name) -> None
@@ -350,7 +384,8 @@ load_learned_names() -> None    # seed _LEARNED_NAMES from EDMC config (plugin_s
 save_learned_names() -> None    # persist _LEARNED_NAMES to EDMC config (plugin_stop)
 ```
 
-Resolution order: explicit `localised_name` → `DISPLAY_NAMES` → `_LEARNED_NAMES` →
+Resolution order: explicit `localised_name` → `DISPLAY_NAMES` (curated) →
+`FDEVIDS_DISPLAY_NAMES` (generated, from `names_fdevids.py`) → `_LEARNED_NAMES` →
 title-cased fallback. `remember()` ignores unresolved `$Token;` placeholders.
 
 `_LEARNED_NAMES` is persisted as JSON under the `edplg_learned_names` config key,
@@ -360,14 +395,44 @@ writing on every `remember()` call.
 
 Canonicalisation: `name.lower().replace(" ", "")` — matches EDMC monitor.
 
+`DISPLAY_NAMES` is now small and deliberately so: it exists only for internal
+names ED-PLG has seen (or expects) in-game that `names_fdevids.py` doesn't (yet)
+carry under that exact symbol. A key present in both wins from `DISPLAY_NAMES` —
+remove an entry once the generated table picks it up.
+
+### 6.5.1 `names_fdevids.py` — generated FDevIDs table
+
+```python
+FDEVIDS_DISPLAY_NAMES: Dict[str, str]   # canonical_id → English name, from FDevIDs
+```
+
+Generated by `scripts/update-names.mjs` (`npm run update-names`), which fetches
+[`EDCD/FDevIDs`'s `microresources.csv`](https://raw.githubusercontent.com/EDCD/FDevIDs/master/microresources.csv),
+keeps only rows whose `category` column is `Component`, `Item`, or `Data` (the
+`Consumable` rows are out of `TRACKED_CATEGORIES`, see §2), canonicalises each
+`symbol` the same way `names.canonicalise()` does, and writes the `symbol → English
+name` mapping sorted by key for stable diffs. The file carries a header noting it is
+generated and should not be hand-edited.
+
+This is **not** part of `npm run build` — it is a separate, explicit, network-touching
+maintenance script a maintainer runs occasionally, after which the regenerated file
+is committed like any other source change. The running plugin only ever reads the
+committed file; it never fetches anything itself, keeping the "no pip install / no
+network at runtime" property intact.
+
 ### 6.6 `ui.py`
 
 Thread-safe UI updates (called only from `journal_entry` on main thread):
 
 ```python
 create_plugin_app(parent: tk.Frame, on_show_inventory: Callable[[], None]) -> tk.Frame
-create_prefs(parent: nb.Notebook, overlay_available: bool, cmdr: str) -> nb.Frame
+create_prefs(parent: nb.Notebook, overlay_available: bool, sound_available: bool, cmdr: str) -> nb.Frame
 overlay_enabled() -> bool
+overlay_position() -> Tuple[int, int]           # clamped to MAX_ORIGIN_X/Y
+sound_enabled() -> bool
+message_format() -> str                          # raw template, defaulted if unset
+format_pillage_message(item: str, total: int) -> str  # rendered, falls back to default on a bad template
+announced_categories() -> FrozenSet[str]         # categories that get a pillage notification
 save_prefs(cmdr: str) -> bool
 set_status(message: str) -> None
 set_last_event(message: str) -> None
@@ -380,15 +445,28 @@ set_update_applied(version: str) -> None
 Uses `theme.update(frame)` for EDMC dark/light theme consistency. `ui.py` does not
 import `load.py`; the Inventory button is wired via the `on_show_inventory` callback
 to keep the dependency one-way. `ui.py` does import `update.py` (for
-`CONFIG_AUTO_UPDATE`/`RELEASES_PAGE_URL`), a one-way dependency in the other
-direction - `update.py` never imports `ui.py` or reaches into Tkinter itself. See
-§14 for the last four functions.
+`CONFIG_AUTO_UPDATE`/`RELEASES_PAGE_URL`) and `overlay.py` (for the
+`DEFAULT_ORIGIN_*`/`MAX_ORIGIN_*` constants only — it never touches the overlay
+client itself), one-way dependencies in the other direction: neither `update.py`
+nor `overlay.py` imports `ui.py`. See §14 for the last four functions.
+
+`announced_categories()` reads a JSON list from config; an unset key (empty string)
+means "not configured" and returns every `TRACKED_CATEGORIES` entry, while an
+explicitly saved `"[]"` means the commander muted all of them — the JSON encoding
+is what makes that distinction representable (a comma-joined string would collapse
+both cases to `""`). `load.py` calls it per `BackpackChange` and ship-locker-capacity
+check; a category not in the returned set is still tracked and counted, only its
+notification (log line, overlay, panel) is skipped.
 
 Config keys:
 
 | Key | Type | Purpose |
 |-----|------|---------|
 | `edplg_overlay_enabled` | bool | Overlay toggle (default on) |
+| `edplg_overlay_x` / `edplg_overlay_y` | int | Overlay origin (default 900 / 120) |
+| `edplg_sound_enabled` | bool | Pickup notification sound (default **off**) |
+| `edplg_message_format` | str | Pillage message template (default if empty) |
+| `edplg_announce_categories` | str (JSON list) | Categories that get a pillage notification (unset = all) |
 | `edplg_window_geometry` | str | Inventory window position/size |
 | `edplg_auto_update` | bool | Auto-update toggle (default **off** - opt-in) |
 | `edplg_last_version` | str | Internal - see §14, `check_applied_update()` |
@@ -401,11 +479,20 @@ Config keys:
 Pillage message format:
 
 ```python
-f"[{label}] pillaged! New Inventory Total: {combined_total}"     # log + panel
-f"+{delta}  {label}: {combined_total}"                           # overlay
+ui.format_pillage_message(label, combined_total)   # log + panel, configurable template
+f"+{delta}  {label}: {combined_total}"              # overlay - fixed, not configurable
 ```
 
 `combined_total` = backpack + ship locker + carrier locker count for the resource.
+The overlay line stays a fixed short form regardless of the configured template, so
+it keeps fitting the overlay's stack.
+
+`_handle_backpack_change()` and `_warn_ship_locker_capacity()` both filter their
+per-category iteration through `ui.announced_categories()` before logging/notifying
+- items in a muted category are still applied to `InventoryTracker` (counts and
+`sync_backpack_from_state` are unconditional), only the notification is skipped.
+`_sound.play()` fires once per `BackpackChange` that produced at least one announced
+pillage message (not once per item).
 
 Return value: last pillage message string (displayed in EDMC status area) or `None`.
 
@@ -528,8 +615,9 @@ Apex-specific handling exists or is needed.
 ## 9. Build System
 
 ```bash
-npm run build     # scripts/build.mjs
-npm run package   # scripts/build.mjs, then scripts/package.mjs
+npm run build         # scripts/build.mjs
+npm run package       # scripts/build.mjs, then scripts/package.mjs
+npm run update-names  # scripts/update-names.mjs (maintenance only, see below)
 ```
 
 `scripts/build.mjs`:
@@ -545,6 +633,13 @@ extracting the archive drops a ready-to-copy `EDPLG/` folder straight into the E
 plugins directory. This is the artefact attached to GitHub releases.
 
 No transpilation or bundling — EDMC loads Python source directly.
+
+`scripts/update-names.mjs` is a separate maintenance step, deliberately **not**
+run as part of `build`/`package`: it fetches FDevIDs' `microresources.csv` (the
+only network access anywhere in this repo's tooling) and regenerates
+`plugin/names_fdevids.py` (see §6.5.1). `build`/`package` stay offline and
+reproducible; a maintainer runs `update-names` occasionally and commits the
+regenerated file like any other change.
 
 ### Installation path (Windows)
 
@@ -588,10 +683,23 @@ Manual verification steps for releases:
     below 900, then refill past it; confirm it warns again.
 11. Disable the overlay in settings; confirm no further overlay lines are drawn.
 12. Verify log entries in `%TEMP%\EDMarketConnector.log`.
+13. In the Inventory window, type into the **Filter** box; confirm only matching
+    rows remain on all three tabs while totals/bars stay unchanged, and **Clear**
+    restores the full list.
+14. In Settings, change the **Pillage message** template (e.g. add `{total}` twice
+    or an unknown placeholder); confirm valid templates apply and an invalid one
+    falls back to the default rather than erroring. Enable **Play a sound on
+    pickup** and confirm a beep plays on the next pickup (Windows only).
+15. In Settings, uncheck one category under **Announce pickups for**; loot that
+    category and confirm no log/overlay/panel notification appears, but the
+    Inventory window and combined totals still reflect the pickup. Re-check it.
+16. Set a custom **Overlay position** X/Y in Settings; confirm the overlay stack
+    redraws at the new origin on the next pickup.
 
-Non-game verification: `suit.py`, `names.py`, `inventory.py`, `overlay.py`, and
-`window.py` can be exercised outside EDMC by stubbing the `config` and `theme`
-modules in `sys.modules` and replaying real journal lines through the tracker.
+Non-game verification: `suit.py`, `names.py`, `names_fdevids.py`, `inventory.py`,
+`overlay.py`, `sound.py`, and `window.py` can be exercised outside EDMC by
+stubbing the `config` and `theme` modules in `sys.modules` and replaying real
+journal lines through the tracker.
 
 ## 12. Dependencies
 
@@ -599,12 +707,15 @@ modules in `sys.modules` and replaying real journal lines through the tracker.
 |------------|--------------|-------|
 | EDMC 5.x | Runtime | Provides Python, Tkinter, journal monitor |
 | EDMCModernOverlay | Optional | In-game overlay; legacy EDMCOverlay also works. Absent = feature disabled, plugin still loads |
-| Node.js 18+ | Build only | `npm run build` |
-| GitHub Releases API | Optional (auto-update, off by default) | `update.py`'s only network call - see §14 |
+| `winsound` (stdlib) | Optional | Pickup notification sound; Windows-only, so unavailable elsewhere. Absent = checkbox disabled, plugin still loads |
+| Node.js 18+ | Build only | `npm run build`, `npm run package`, `npm run update-names` |
+| GitHub Releases API | Optional (auto-update, off by default) | `update.py`'s only *runtime* network call - see §14 |
+| EDCD/FDevIDs `microresources.csv` | Maintenance only | `scripts/update-names.mjs`'s only network call - see §6.5.1. Not fetched at build or runtime |
 
 No pip dependencies. Plugin uses only Python stdlib + EDMC-provided modules,
 even with auto-update enabled (`update.py` uses `urllib`/`zipfile`, not a pip
-package).
+package). No npm dependencies either — `scripts/*.mjs` use only Node's stdlib
+(`fs`, `https`, `path`, `child_process`).
 
 ## 13. References
 

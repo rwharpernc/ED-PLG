@@ -296,20 +296,39 @@ Design rules:
 Display names are resolved in priority order:
 
 1. `Name_Localised` from the journal event (authoritative in-game label).
-2. Static mapping in `names.py` (`DISPLAY_NAMES` dict).
-3. Name learned from `Name_Localised` on an earlier event this session (`names.remember`).
-4. Fallback: title-cased internal ID with underscores replaced by spaces.
+2. Hand-curated overrides in `names.py` (`DISPLAY_NAMES` dict).
+3. Generated table imported from FDevIDs (`names_fdevids.py`,
+   `FDEVIDS_DISPLAY_NAMES` — see below).
+4. Name learned from `Name_Localised` on an earlier event this session (`names.remember`).
+5. Fallback: title-cased internal ID with underscores replaced by spaces.
 
-Step 3 exists because the inventory window lists **everything** held, not just what
-was looted this session, and the static table covers only a fraction of the ~350
-microresources in the game. `Backpack`, `ShipLocker`, `BackpackChange`, and CAPI
-carrier payloads all carry the game's own label for any resource whose display name
-differs from its internal ID, so the game populates the cache as a side effect of
-normal syncing.
+Step 4 exists because the inventory window lists **everything** held, not just what
+was looted this session, and even the generated table can lag brand-new content.
+`Backpack`, `ShipLocker`, `BackpackChange`, and CAPI carrier payloads all carry the
+game's own label for any resource whose display name differs from its internal ID,
+so the game populates the cache as a side effect of normal syncing.
 
-The static table therefore serves two narrow purposes: overriding the game's label,
-and fixing acronyms the title-case fallback mangles (`rdx` → `RDX`). It is not
-expected to enumerate every resource.
+`DISPLAY_NAMES` therefore serves two narrow purposes: overriding the generated
+table's label, and covering internal names ED-PLG has seen (or expects) in-game that
+FDevIDs' `microresources.csv` doesn't yet list under that exact symbol. It is not
+expected to enumerate every resource — that is the generated table's job.
+
+### 9.1 Generated table (FDevIDs import)
+
+`plugin/names_fdevids.py` is generated, not hand-written. `npm run update-names`
+(`scripts/update-names.mjs`) fetches
+[`EDCD/FDevIDs`'s `microresources.csv`](https://github.com/EDCD/FDevIDs/blob/master/microresources.csv)
+— the community-maintained catalogue of Frontier's internal IDs also used by EDDN
+and other EDCD tools — keeps only the `Component`/`Item`/`Data` rows (the
+`Consumable` rows are out of scope, see §2), canonicalises each `symbol` the same
+way `names.canonicalise()` does, and writes the result as a plain
+`Dict[str, str]` module.
+
+This is a deliberate maintenance step, not part of `npm run build`: the ordinary
+build stays offline and reproducible, and only `update-names` touches the network.
+A maintainer reruns it occasionally to pick up new Odyssey content, then commits
+the regenerated file like any other source change — the running plugin never
+fetches anything itself.
 
 ## 10. Non-Functional Requirements
 
@@ -319,7 +338,7 @@ expected to enumerate every resource.
 | Reliability | Reconcile with EDMC `state` dict after each `BackpackChange`. |
 | Compatibility | EDMC 5.x with Python 3.9+ (`plugin_start3` API). |
 | Degradation | Optional dependencies (overlay) are absent-by-default: import failure disables the feature, never the plugin. |
-| Maintainability | Modular layout: `load`, `inventory`, `suit`, `overlay`, `window`, `names`, `ui`. |
+| Maintainability | Modular layout: `load`, `inventory`, `suit`, `overlay`, `sound`, `window`, `names`, `names_fdevids` (generated), `ui`. |
 | Portability | Pure Python plugin; build produces a copy-ready folder. |
 
 ## 11. Known Limitations
@@ -344,9 +363,9 @@ These are inherited from the game and EDMC, not bugs in ED-PLG:
 
 ## 12. Future Considerations
 
-Possible enhancements, not yet committed:
-
-- Import full microresource name table from FDevIDs at build time.
+None currently — every enhancement previously listed here has shipped (see
+`CHANGELOG.md`). New ideas belong in `TODO.md` until they're designed enough
+to land here.
 
 ## 13. References
 
