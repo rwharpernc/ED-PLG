@@ -115,11 +115,11 @@ Because your suit sets your capacity, the heading names it and whether the capac
 
 ### Overlay notifications
 
-With an overlay plugin installed, each pickup draws a line in-game:
+With an overlay plugin installed, each pickup draws a line in-game, coloured by category (blue Assets, green Goods, violet Data) so a fast loot run is scannable at a glance:
 
 ```
-+1  Manufacturing Instructions: 13
-+2  Circuit Board: 5
++1  Manufacturing Instructions: 13   (violet - Data)
++2  Circuit Board: 5                 (blue - Assets)
 ```
 
 Up to five lines stack, newest first, each lasting 8 seconds. Looting the same item again **updates its existing line** instead of adding a duplicate, so a fast loot run does not spam the stack.
@@ -127,6 +127,14 @@ Up to five lines stack, newest first, each lasting 8 seconds. Looting the same i
 Every ED-PLG message uses the `edplg-` ID prefix, which means you can reposition the whole stack from ModernOverlay's controller by adding an `edplg-` prefix group. Alternatively, **File → Settings → ED-PLG** has an **Overlay position** X/Y field (default 900, 120, on the legacy overlay's 1280x960 virtual screen) if you'd rather set it directly without a ModernOverlay group.
 
 If the overlay throws an error at any point, ED-PLG disables it for the session rather than letting it break inventory tracking. Tracking is the job; the overlay is a nicety.
+
+### Ship locker capacity bars
+
+**File → Settings → ED-PLG**'s **"Show ship locker capacity bars on the overlay"** (off by default) draws a small persistent panel below the pillage stack — one row per category (Assets/Goods/Data), each a bar and a `total/1000` reading in that category's colour — so you can see how full your ship locker is without opening the inventory window. It redraws whenever your ship locker changes, and stays up between updates rather than fading like a pillage line.
+
+### ModernOverlay panel (experimental)
+
+If you're running EDMCModernOverlay specifically (not the older EDMCOverlay), ED-PLG makes a best-effort attempt to register its own panel group — a background box behind the pillage stack and capacity bars, anchored to a screen corner via **"Overlay panel anchor"** in Settings (nw/n/ne/w/center/e/sw/s/se; default `ne`) — instead of relying only on the raw X/Y position. This uses an internal ModernOverlay API that hasn't been confirmed working end-to-end yet; if it doesn't do anything visible, ED-PLG still draws everything exactly as it would without it, just without the background panel. The anchor field is greyed out unless ModernOverlay is detected.
 
 ### Muting a category's notifications
 
@@ -148,7 +156,13 @@ Both apply to the log line, panel status, and the message EDMC records as the "l
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Automatically download updates | **Off** | Opt-in; see [Updates](#updates) below |
+| Pillage message | Built-in default | `{item}`/`{total}` template; see [Notification settings](#notification-settings) above |
+| Play a sound on pickup | **Off** | Windows-only; see [Notification settings](#notification-settings) above |
 | Show pillage notifications on the in-game overlay | On | Greyed out when no overlay plugin is installed |
+| Show ship locker capacity bars on the overlay | **Off** | See [Ship locker capacity bars](#ship-locker-capacity-bars) above |
+| Overlay panel anchor | `ne` | ModernOverlay only, greyed out otherwise; see [ModernOverlay panel](#modernoverlay-panel-experimental) above |
+| Overlay position (X / Y) | 900 / 120 | See [Overlay notifications](#overlay-notifications) above |
+| Announce pickups for (Assets/Goods/Data) | All on | See [Muting a category's notifications](#muting-a-categorys-notifications) above |
 | Suit Backpack Capacity | Unengineered default per suit | One editable row per suit loadout you've worn; see [Backpack capacity](#backpack-capacity-defaults-plus-your-own-numbers) above |
 
 ## Updates

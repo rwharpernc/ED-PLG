@@ -18,12 +18,13 @@ from companion import CAPIData
 from config import appname
 
 from . import __version__
-from .inventory import CATEGORY_SHORT, InventoryTracker
+from .inventory import CATEGORY_SHORT, SHIP_LOCKER_CAPACITY, TRACKED_CATEGORIES, InventoryTracker
 from .overlay import PillageOverlay
 from .sound import PillageSound
 from .suit import SuitState
 from .update import UpdateManager, check_applied_update
 from . import names
+from . import overlay
 from . import suit
 from . import ui
 from . import window
@@ -68,6 +69,8 @@ def plugin_start3(plugin_dir: str) -> str:
     suit.load_overrides()
     _overlay.set_enabled(ui.overlay_enabled())
     _overlay.set_position(*ui.overlay_position())
+    _overlay.set_anchor(ui.overlay_anchor())
+    _overlay.set_bars_enabled(ui.overlay_bars_enabled())
     _sound.set_enabled(ui.sound_enabled())
     if not _overlay.available:
         logger.info("No overlay plugin found; pillage overlay disabled")
@@ -100,6 +103,7 @@ def plugin_stop() -> None:
     names.save_learned_names()
     suit.save_overrides()
     _overlay.clear()
+    _overlay.clear_capacity_bars()
     window.close()
     logger.info("ED-PLG shutting down")
 
@@ -118,14 +122,17 @@ def _show_inventory() -> None:
 
 def plugin_prefs(parent, cmdr: str, is_beta: bool):
     """Create the ED-PLG settings tab."""
-    return ui.create_prefs(parent, _overlay.available, _sound.available, cmdr)
+    return ui.create_prefs(parent, _overlay.available, _sound.available, _overlay.is_modern_overlay, cmdr)
 
 
 def prefs_changed(cmdr: str, is_beta: bool) -> None:
     """Settings were saved."""
     _overlay.set_enabled(ui.save_prefs(cmdr))
     _overlay.set_position(*ui.overlay_position())
+    _overlay.set_anchor(ui.overlay_anchor())
+    _overlay.set_bars_enabled(ui.overlay_bars_enabled())
     _sound.set_enabled(ui.sound_enabled())
+    _refresh_locker_capacity_bars()
 
 
 def journal_entry(
@@ -168,6 +175,7 @@ def _dispatch(
         logger.debug("Ship locker baseline synced")
         ui.set_status("Ship locker synced")
         _warn_ship_locker_capacity()
+        _refresh_locker_capacity_bars()
         return None
 
     if event in ("SuitLoadout", "SwitchSuitLoadout"):
@@ -251,6 +259,7 @@ def _on_commander_session(cmdr: str, state: Dict[str, Any], *, reason: str) -> N
     switched = _tracker.set_commander(cmdr)
     _tracker.sync_all_from_state(state)
     _warn_ship_locker_capacity()
+    _refresh_locker_capacity_bars()
 
     # EDMC only (re)populates the backpack from a fresh Backpack/Resupply event,
     # and clears it on LoadGame. A commander already on foot when EDMC attaches
@@ -303,6 +312,24 @@ def _warn_ship_locker_capacity() -> None:
         )
 
 
+def _refresh_locker_capacity_bars() -> None:
+    """
+    Redraw the ship locker capacity panel (see overlay.render_capacity_bars)
+    from the current tracker snapshot. Cheap no-op when bars are disabled or
+    no overlay client is connected - see PillageOverlay.render_capacity_bars.
+    """
+    values = {
+        category: (
+            CATEGORY_SHORT[category],
+            sum(_tracker.ship_locker.get(category, {}).values()),
+            SHIP_LOCKER_CAPACITY[category],
+            overlay.CATEGORY_COLOURS.get(category, overlay.COLOUR),
+        )
+        for category in TRACKED_CATEGORIES
+    }
+    _overlay.render_capacity_bars(values)
+
+
 def _handle_backpack_change(
     entry: Dict[str, Any],
     state: Dict[str, Any],
@@ -321,7 +348,11 @@ def _handle_backpack_change(
         message = ui.format_pillage_message(label, combined_total)
         logger.info(message)
         pillage_messages.append(message)
-        _overlay.notify(internal_name, f"+{delta}  {label}: {combined_total}")
+        _overlay.notify(
+            internal_name,
+            f"+{delta}  {label}: {combined_total}",
+            colour=overlay.CATEGORY_COLOURS.get(category, overlay.COLOUR),
+        )
 
     # Reconcile with EDMC state after processing journal deltas.
     _tracker.sync_backpack_from_state(state)

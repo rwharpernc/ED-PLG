@@ -25,8 +25,16 @@ logger = logging.getLogger(f"{appname}.{plugin_name}")
 CONFIG_OVERLAY_ENABLED = "edplg_overlay_enabled"
 CONFIG_OVERLAY_X = "edplg_overlay_x"
 CONFIG_OVERLAY_Y = "edplg_overlay_y"
+CONFIG_OVERLAY_BARS_ENABLED = "edplg_overlay_bars_enabled"
+CONFIG_OVERLAY_ANCHOR = "edplg_overlay_anchor"
 CONFIG_SOUND_ENABLED = "edplg_sound_enabled"
 CONFIG_MESSAGE_FORMAT = "edplg_message_format"
+
+# The nine anchors ModernOverlay's plugin-group API accepts (see overlay.py's
+# _register_plugin_group). Only meaningful when ModernOverlay is the active
+# provider - see is_modern_overlay.
+VALID_OVERLAY_ANCHORS = ("nw", "n", "ne", "w", "center", "e", "sw", "s", "se")
+DEFAULT_OVERLAY_ANCHOR = "ne"
 
 # JSON list of TRACKED_CATEGORIES entries whose pickups get a pillage
 # notification (log line, overlay, panel status). Unset (empty string from
@@ -54,6 +62,8 @@ _version_label: Optional[HyperlinkLabel] = None
 _overlay_var: Optional[tk.BooleanVar] = None
 _overlay_x_var: Optional[tk.StringVar] = None
 _overlay_y_var: Optional[tk.StringVar] = None
+_overlay_bars_var: Optional[tk.BooleanVar] = None
+_overlay_anchor_var: Optional[tk.StringVar] = None
 _auto_update_var: Optional[tk.BooleanVar] = None
 _sound_var: Optional[tk.BooleanVar] = None
 _message_format_var: Optional[tk.StringVar] = None
@@ -168,10 +178,12 @@ def create_prefs(
     parent: nb.Notebook,
     overlay_available: bool,
     sound_available: bool,
+    is_modern_overlay: bool,
     cmdr: str,
 ) -> nb.Frame:
     """Create the ED-PLG tab in EDMC's settings window."""
     global _overlay_var, _overlay_x_var, _overlay_y_var, _auto_update_var
+    global _overlay_bars_var, _overlay_anchor_var
     global _sound_var, _message_format_var
     global _announce_vars, _override_vars, _override_defaults
 
@@ -213,6 +225,7 @@ def create_prefs(
     nb.Label(frame, text=hint).grid(row=row, column=0, sticky=tk.W, padx=10, pady=(2, 10))
     row += 1
 
+    row = _build_overlay_bars(frame, overlay_available, is_modern_overlay, start_row=row)
     row = _build_overlay_position(frame, start_row=row)
     row = _build_announce_categories(frame, start_row=row)
 
@@ -269,6 +282,55 @@ def _build_sound_pref(frame: nb.Frame, sound_available: bool, *, start_row: int)
         row += 1
 
     return row
+
+
+def _build_overlay_bars(
+    frame: nb.Frame,
+    overlay_available: bool,
+    is_modern_overlay: bool,
+    *,
+    start_row: int,
+) -> int:
+    """Add the ship locker capacity bars checkbox and (ModernOverlay-only) panel anchor field."""
+    global _overlay_bars_var, _overlay_anchor_var
+
+    row = start_row
+    _overlay_bars_var = tk.BooleanVar(value=overlay_bars_enabled())
+    nb.Checkbutton(
+        frame,
+        text="Show ship locker capacity bars on the overlay",
+        variable=_overlay_bars_var,
+        state=tk.NORMAL if overlay_available else tk.DISABLED,
+    ).grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 0))
+    row += 1
+
+    nb.Label(
+        frame,
+        text="A small persistent panel below the pillage stack, refreshed whenever the ship locker changes.",
+    ).grid(row=row, column=0, sticky=tk.W, padx=10, pady=(2, 10))
+    row += 1
+
+    anchor_row = nb.Frame(frame)
+    anchor_row.grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 2))
+    nb.Label(anchor_row, text="Overlay panel anchor:").pack(side=tk.LEFT)
+    _overlay_anchor_var = tk.StringVar(value=overlay_anchor())
+    nb.Entry(
+        anchor_row, textvariable=_overlay_anchor_var, width=8,
+        state=tk.NORMAL if is_modern_overlay else tk.DISABLED,
+    ).pack(side=tk.LEFT, padx=(4, 0))
+    row += 1
+
+    anchor_hint = (
+        f"One of: {', '.join(VALID_OVERLAY_ANCHORS)}. Registers ED-PLG as its own "
+        "ModernOverlay panel (background + this anchor) instead of the raw X/Y "
+        "position below; falls back to X/Y if that fails."
+        if is_modern_overlay
+        else "ModernOverlay-only (not detected) — position is set via X/Y below instead."
+    )
+    nb.Label(frame, text=anchor_hint, wraplength=440, justify=tk.LEFT).grid(
+        row=row, column=0, sticky=tk.W, padx=10, pady=(0, 10),
+    )
+    return row + 1
 
 
 def _build_overlay_position(frame: nb.Frame, *, start_row: int) -> int:
@@ -450,6 +512,16 @@ def overlay_position() -> Tuple[int, int]:
     return max(0, min(MAX_ORIGIN_X, x)), max(0, min(MAX_ORIGIN_Y, y))
 
 
+def overlay_bars_enabled() -> bool:
+    return bool(config.get_bool(CONFIG_OVERLAY_BARS_ENABLED, default=False))
+
+
+def overlay_anchor() -> str:
+    """ModernOverlay panel anchor; falls back to the default for an unset or invalid value."""
+    raw = (config.get_str(CONFIG_OVERLAY_ANCHOR) or "").strip().lower()
+    return raw if raw in VALID_OVERLAY_ANCHORS else DEFAULT_OVERLAY_ANCHOR
+
+
 def announced_categories() -> FrozenSet[str]:
     """
     Categories whose pickups get a pillage notification (log line, overlay,
@@ -481,6 +553,14 @@ def save_prefs(cmdr: str) -> bool:
         config.set(CONFIG_SOUND_ENABLED, _sound_var.get())
     if _message_format_var is not None:
         config.set(CONFIG_MESSAGE_FORMAT, _message_format_var.get().strip())
+    if _overlay_bars_var is not None:
+        config.set(CONFIG_OVERLAY_BARS_ENABLED, _overlay_bars_var.get())
+    if _overlay_anchor_var is not None:
+        anchor = _overlay_anchor_var.get().strip().lower()
+        if anchor in VALID_OVERLAY_ANCHORS:
+            config.set(CONFIG_OVERLAY_ANCHOR, anchor)
+        elif anchor:
+            logger.debug("Ignoring unrecognised overlay anchor %r", anchor)
 
     _save_overlay_position()
     _save_announce_categories()

@@ -6,6 +6,13 @@ to any version; pick items up as desired.
 
 ## Features (design-spec §11)
 
+- [x] Richer overlay visuals within EDMCModernOverlay's capabilities:
+  per-category pillage line colours, an optional persistent ship locker
+  capacity panel (bars via `send_shape`, off by default), and a best-effort
+  ModernOverlay plugin-group registration (background panel + anchor,
+  falling back to plain positioned lines wherever it's unavailable)
+  (`plugin/overlay.py`, `plugin/ui.py`, `plugin/load.py`). Shipped in 1.1.0
+  (unreleased); see follow-ups below.
 - [x] Import full microresource name table from FDevIDs at build time. A new
   `npm run update-names` script (`scripts/update-names.mjs`) fetches
   EDCD/FDevIDs' `microresources.csv` and regenerates
@@ -26,6 +33,18 @@ to any version; pick items up as desired.
   the tabs (`plugin/window.py`) narrows the item listing on all three tabs to
   resources whose display name contains the typed text; category totals and
   capacity bars stay unfiltered. Shipped in 1.1.0 (unreleased).
+
+## Overlay follow-ups (not yet done)
+
+- [ ] Validate the ModernOverlay plugin-group registration (`overlay.py`'s
+  `_register_plugin_group`) against a live EDMCModernOverlay install —
+  implemented from its developer docs alone, not yet confirmed to actually
+  produce a background panel/anchor in-game. If the API shape is wrong,
+  either fix the call or drop the feature; it degrades safely either way.
+- [ ] Backpack capacity bars on the overlay (ship locker only for now — see
+  design-spec §3.4 "Ship locker capacity panel" for why backpack was left
+  out of this pass: capacity can be unknown per suit, unlike ship locker's
+  flat 1000/category).
 
 ## Fixable gaps
 

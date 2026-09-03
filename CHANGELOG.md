@@ -5,6 +5,28 @@ All notable changes to ED-PLG are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Richer overlay visuals, within EDMCModernOverlay's capabilities.**
+  - Pillage lines are now coloured per category (blue Assets, green Goods,
+    violet Data) instead of one flat colour, so a fast loot run is
+    scannable at a glance (`overlay.CATEGORY_COLOURS`).
+  - **Ship locker capacity bars** — an optional persistent panel below the
+    pillage stack (one row per category: label, bar, `total/1000`),
+    refreshed on every `ShipLocker` sync. Off by default; toggle in
+    Settings. Backpack capacity bars were left out of this pass (ship
+    locker's capacity is always known; backpack's isn't for every suit).
+  - **ModernOverlay panel group (experimental).** When the connected
+    provider identifies as EDMCModernOverlay specifically, ED-PLG makes a
+    best-effort attempt to register its own background panel, anchored to
+    a screen corner/edge (new **Overlay panel anchor** setting) instead of
+    relying only on raw X/Y. This uses an internal ModernOverlay API
+    outside the documented legacy `edmcoverlay` surface and has not been
+    validated against a live install — any failure degrades silently to
+    today's plain positioned elements. See `TODO.md`'s Overlay follow-ups.
+
 ## [1.1.0] - 2026-09-03
 
 ### Added

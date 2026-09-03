@@ -272,34 +272,88 @@ the override mechanism.
 ```python
 class PillageOverlay:
     @property available -> bool          # an overlay module was importable
+    @property is_modern_overlay -> bool  # provider identifies as EDMCModernOverlay (vs. legacy EDMCOverlay)
     def set_enabled(enabled: bool) -> None
+    def set_bars_enabled(enabled: bool) -> None
     def set_position(x: int, y: int) -> None   # clamped to MAX_ORIGIN_X/Y
+    def set_anchor(anchor: Optional[str]) -> None   # ModernOverlay-only; re-registers the plugin group
     def notify(internal_name: str, text: str, *, colour: str = COLOUR, ttl: int = TTL_SECONDS) -> None
+    def render_capacity_bars(values: Mapping[str, Tuple[str, int, int, str]]) -> None
     def clear() -> None
+    def clear_capacity_bars() -> None
 ```
 
 | Constant | Value | Meaning |
 |----------|-------|---------|
-| `ID_PREFIX` | `edplg-pillage-` | Message IDs; groupable in ModernOverlay |
-| `MAX_LINES` | 5 | Stack depth |
+| `ID_PREFIX` | `edplg-pillage-` | Pillage-line message IDs; groupable in ModernOverlay |
+| `CAPACITY_ID_PREFIX` | `edplg-locker-` | Capacity-bar element IDs (`{label,track,fill,value}-{category}`) |
+| `MAX_LINES` | 5 | Pillage stack depth |
 | `TTL_SECONDS` | 8 | Default per-line lifetime |
-| `COLOUR` | `#ffbf00` | Default (pillage) line colour |
+| `COLOUR` | `#ffbf00` | Fallback pillage line colour (categories not in `CATEGORY_COLOURS`, and non-category callers like the locker warning) |
+| `CATEGORY_COLOURS` | Component `#4fc3f7` / Item `#81c784` / Data `#ba68c8` | Per-category pillage line colour, also reused for that category's capacity-bar row |
 | `DEFAULT_ORIGIN_X` / `DEFAULT_ORIGIN_Y` | 900 / 120 | Default overlay origin |
 | `MAX_ORIGIN_X` / `MAX_ORIGIN_Y` | 1280 / 960 | Legacy virtual screen bounds; `set_position()` clamps to these |
-| `LINE_HEIGHT` | 18 | Row spacing |
+| `LINE_HEIGHT` | 18 | Pillage row spacing |
+| `CAPACITY_BAR_GAP` | 8 | Px between the pillage stack's bottom and the capacity panel |
+| `CAPACITY_ROW_HEIGHT` / `CAPACITY_LABEL_WIDTH` / `CAPACITY_BAR_WIDTH` / `CAPACITY_BAR_HEIGHT` / `CAPACITY_VALUE_GAP` | 16 / 60 / 140 / 10 / 8 | Capacity panel layout (px) |
+| `CAPACITY_TRACK_COLOUR` | `#555555` | Capacity bar's empty-track outline colour |
+| `CAPACITY_TTL` | 3600 | Capacity bar element TTL — long enough to look persistent between `ShipLocker` syncs, not a fade like pillage lines |
 
-Behaviour: the client is created lazily on first `notify()`. Lines are held as
-`(internal_name, text, expiry, colour)`, newest first; a call with an
-`internal_name` matching a live line replaces it rather than appending — pillage
-calls key on the resource's internal name, other callers (e.g. the ship locker
-capacity warning, §8) use their own distinct key so they don't collide with item
-pickups. `colour`/`ttl` default to the pillage look; callers pass their own to
-render a visually distinct message. Rows vacated by expiry are blanked by
-sending empty text (the legacy clear idiom). Any exception from the overlay client
-disables the feature for the session rather than propagating into `journal_entry`.
-The origin defaults to `(DEFAULT_ORIGIN_X, DEFAULT_ORIGIN_Y)` and is only ever
-changed via `set_position()`, which `load.py` calls with `ui.overlay_position()`
-at startup and after Settings is saved (see §6.6).
+**Pillage lines** (unchanged mechanics from before, now with category colour):
+the client is created lazily on first `notify()`/`render_capacity_bars()` call.
+Lines are held as `(internal_name, text, expiry, colour)`, newest first; a call
+with an `internal_name` matching a live line replaces it rather than appending
+— pillage calls key on the resource's internal name, other callers (e.g. the
+ship locker capacity warning, §8) use their own distinct key so they don't
+collide with item pickups. `colour` defaults to `COLOUR`; `load.py` passes
+`overlay.CATEGORY_COLOURS.get(category, overlay.COLOUR)` for both pillage
+notifications and the locker-capacity warning override. Rows vacated by expiry
+are blanked by sending empty text (the legacy clear idiom). The origin
+defaults to `(DEFAULT_ORIGIN_X, DEFAULT_ORIGIN_Y)` and is only ever changed via
+`set_position()`, which `load.py` calls with `ui.overlay_position()` at startup
+and after Settings is saved (see §6.6).
+
+**Capacity bars**: `render_capacity_bars({category: (label, total, capacity,
+colour), ...})` draws (or refreshes) a fixed-size panel — one row per
+`TRACKED_CATEGORIES` entry present in `values` — below the pillage stack. Each
+row is four elements sent via the legacy client: a text label, an outline-only
+`send_shape(shape="rect", fill="")` track, a filled `send_shape` bar scaled to
+`total/capacity` (or cleared via `send_raw({"id": ...})` — the documented
+legacy-clear idiom — when `total` is 0), and a `"total/capacity"` text value.
+Row count and element IDs are fixed (`TRACKED_CATEGORIES` never changes at
+runtime), so `clear_capacity_bars()` can blank every element deterministically
+without needing to track what was last rendered. `load.py`'s
+`_refresh_locker_capacity_bars()` is the only caller, invoked on every
+`ShipLocker` sync and once per commander session; it always passes all three
+categories with ship locker's flat `SHIP_LOCKER_CAPACITY` (never `None`), so
+the "unknown capacity" path in `render_capacity_bars` (`capacity` falsy →
+`total/capacity` becomes bare `total`, no fill) is reachable but currently
+unused — kept general enough that a future backpack-bars caller (which *can*
+have an unknown per-suit capacity) can reuse it unchanged.
+
+**Failure isolation**: a pillage-line send failure (`_send_text` with
+`feature="pillage"`) drops the client and disables `_enabled` — the original,
+conservative behaviour. A capacity-bars send failure (`_send_shape`/`_send_clear`,
+or `_send_text` with `feature="bars"`, e.g. a provider without `send_shape`)
+only disables `_bars_enabled`, leaving already-working pillage lines on the
+same client untouched.
+
+**ModernOverlay plugin-group registration** (`_register_plugin_group`, called
+once per successful `_connect()` and again whenever `set_anchor()` changes the
+anchor): best-effort only, gated on `is_modern_overlay` (checks
+`edmcoverlay.MODERN_OVERLAY_IDENTITY`, exported by ModernOverlay's
+`edmcoverlay` shim — absent or a different `plugin` value means legacy
+EDMCOverlay, and this is skipped entirely). When gated in, it attempts
+`from overlay_plugin.overlay_api import define_plugin_group` — an internal
+ModernOverlay module, not the documented-by-example legacy `edmcoverlay`
+surface the rest of this file targets — and registers a background panel
+(`background_color`/`background_border_color`/`background_border_width`)
+anchored (`id_prefix_group_anchor`) to `ui.overlay_anchor()` (default `"ne"`),
+covering both `ID_PREFIX` and `CAPACITY_ID_PREFIX`. Any exception (missing
+module, changed signature, whatever) is caught and logged at `debug`, leaving
+ED-PLG drawing plain positioned elements exactly as it did before this
+existed. **This has not been validated against a live ModernOverlay
+install** — see `TODO.md`'s Overlay follow-ups.
 
 ### 6.3.1 `sound.py` — `PillageSound`
 
@@ -426,9 +480,11 @@ Thread-safe UI updates (called only from `journal_entry` on main thread):
 
 ```python
 create_plugin_app(parent: tk.Frame, on_show_inventory: Callable[[], None]) -> tk.Frame
-create_prefs(parent: nb.Notebook, overlay_available: bool, sound_available: bool, cmdr: str) -> nb.Frame
+create_prefs(parent: nb.Notebook, overlay_available: bool, sound_available: bool, is_modern_overlay: bool, cmdr: str) -> nb.Frame
 overlay_enabled() -> bool
 overlay_position() -> Tuple[int, int]           # clamped to MAX_ORIGIN_X/Y
+overlay_bars_enabled() -> bool                   # ship locker capacity bars toggle (default off)
+overlay_anchor() -> str                          # ModernOverlay panel anchor; defaulted if unset/invalid
 sound_enabled() -> bool
 message_format() -> str                          # raw template, defaulted if unset
 format_pillage_message(item: str, total: int) -> str  # rendered, falls back to default on a bad template
@@ -458,12 +514,23 @@ both cases to `""`). `load.py` calls it per `BackpackChange` and ship-locker-cap
 check; a category not in the returned set is still tracked and counted, only its
 notification (log line, overlay, panel) is skipped.
 
+`overlay_anchor()` validates against `overlay.VALID_OVERLAY_ANCHORS`-equivalent
+`ui.VALID_OVERLAY_ANCHORS` (the nine ModernOverlay anchors), falling back to
+`DEFAULT_OVERLAY_ANCHOR` ("ne") for an unset or unrecognised value; `save_prefs`
+applies the same validation before writing, so an invalid Settings-tab entry is
+silently ignored (leaving the previously stored value) rather than persisted.
+The anchor `Entry` field in Settings is only enabled when `is_modern_overlay` is
+true — on legacy EDMCOverlay it's disabled with a hint that positioning is via
+X/Y instead (`_build_overlay_bars`).
+
 Config keys:
 
 | Key | Type | Purpose |
 |-----|------|---------|
 | `edplg_overlay_enabled` | bool | Overlay toggle (default on) |
 | `edplg_overlay_x` / `edplg_overlay_y` | int | Overlay origin (default 900 / 120) |
+| `edplg_overlay_bars_enabled` | bool | Ship locker capacity bars on the overlay (default **off**) |
+| `edplg_overlay_anchor` | str | ModernOverlay panel anchor (default `"ne"`) |
 | `edplg_sound_enabled` | bool | Pickup notification sound (default **off**) |
 | `edplg_message_format` | str | Pillage message template (default if empty) |
 | `edplg_announce_categories` | str (JSON list) | Categories that get a pillage notification (unset = all) |
@@ -492,7 +559,16 @@ per-category iteration through `ui.announced_categories()` before logging/notify
 - items in a muted category are still applied to `InventoryTracker` (counts and
 `sync_backpack_from_state` are unconditional), only the notification is skipped.
 `_sound.play()` fires once per `BackpackChange` that produced at least one announced
-pillage message (not once per item).
+pillage message (not once per item). Both `_overlay.notify()` calls (pillage and
+locker warning) pass `colour=overlay.CATEGORY_COLOURS.get(category, overlay.COLOUR)`.
+
+`_refresh_locker_capacity_bars()` builds `{category: (label, total, capacity,
+colour)}` from the current tracker snapshot and `SHIP_LOCKER_CAPACITY`, and calls
+`_overlay.render_capacity_bars()` (a cheap no-op when bars are disabled). Called
+from `_on_commander_session()` (so the panel appears as soon as EDMC has ship
+locker state, not only after the next transfer), the `ShipLocker` branch of
+`_dispatch()`, and `prefs_changed()` (so toggling the bars checkbox on redraws
+immediately rather than waiting for the next `ShipLocker` event).
 
 Return value: last pillage message string (displayed in EDMC status area) or `None`.
 
@@ -695,6 +771,19 @@ Manual verification steps for releases:
     Inventory window and combined totals still reflect the pickup. Re-check it.
 16. Set a custom **Overlay position** X/Y in Settings; confirm the overlay stack
     redraws at the new origin on the next pickup.
+17. Loot one resource from each category (Assets/Goods/Data); confirm each
+    pillage line draws in its own colour (`overlay.CATEGORY_COLOURS`) rather
+    than one flat colour.
+18. Enable **Show ship locker capacity bars on the overlay**; confirm a
+    three-row panel (Assets/Goods/Data — label, bar, total/1000) appears below
+    the pillage stack and updates on the next `ShipLocker` sync. Disable the
+    checkbox and confirm the panel is actually removed, not just stops
+    updating.
+19. With EDMCModernOverlay specifically installed (not legacy EDMCOverlay),
+    set an **Overlay panel anchor** and confirm (this is the unvalidated
+    part — see `TODO.md`) whether ED-PLG's elements actually get a
+    background panel anchored there via ModernOverlay's controller, or
+    whether the attempt silently no-ops. Record the result either way.
 
 Non-game verification: `suit.py`, `names.py`, `names_fdevids.py`, `inventory.py`,
 `overlay.py`, `sound.py`, and `window.py` can be exercised outside EDMC by
@@ -707,6 +796,7 @@ journal lines through the tracker.
 |------------|--------------|-------|
 | EDMC 5.x | Runtime | Provides Python, Tkinter, journal monitor |
 | EDMCModernOverlay | Optional | In-game overlay; legacy EDMCOverlay also works. Absent = feature disabled, plugin still loads |
+| `overlay_plugin.overlay_api` (ModernOverlay-internal) | Optional, best-effort | Plugin-group registration (§6.3) only; not the documented legacy `edmcoverlay` surface, unvalidated live, any failure degrades to plain positioned elements |
 | `winsound` (stdlib) | Optional | Pickup notification sound; Windows-only, so unavailable elsewhere. Absent = checkbox disabled, plugin still loads |
 | Node.js 18+ | Build only | `npm run build`, `npm run package`, `npm run update-names` |
 | GitHub Releases API | Optional (auto-update, off by default) | `update.py`'s only *runtime* network call - see §14 |

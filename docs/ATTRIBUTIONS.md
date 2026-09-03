@@ -9,7 +9,7 @@
 | Project | Role | License / Terms |
 |---------|------|-----------------|
 | [Elite Dangerous Market Connector (EDMC)](https://github.com/EDCD/EDMarketConnector) | Host application and plugin API | [GPL-2.0](https://github.com/EDCD/EDMarketConnector/blob/main/COPYING) |
-| [EDMCModernOverlay](https://github.com/SweetJonnySauce/EDMCModernOverlay) | Optional in-game overlay provider, via its legacy `edmcoverlay` compatibility layer | See project repository |
+| [EDMCModernOverlay](https://github.com/SweetJonnySauce/EDMCModernOverlay) | Optional in-game overlay provider, via its legacy `edmcoverlay` compatibility layer (shapes/rects for the capacity bars too) and, best-effort, its internal `overlay_plugin.overlay_api` for panel-group registration | See project repository |
 | [EDMCOverlay](https://github.com/inorton/EDMCOverlay) | Original overlay plugin; defined the `Overlay.send_message()` API ED-PLG codes against | See project repository |
 | Python Standard Library | Plugin runtime (provided by EDMC) | PSF License |
 | Node.js | Build tooling only (`scripts/build.mjs`, `scripts/package.mjs`, `scripts/update-names.mjs`) | [MIT](https://github.com/nodejs/node/blob/main/LICENSE) |

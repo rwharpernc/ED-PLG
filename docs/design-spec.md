@@ -102,11 +102,59 @@ When an overlay plugin is present, each pickup is also drawn in-game:
 | Lifetime | 8 seconds per line |
 | Repeat pickups | Update the item's existing line and float it to the top |
 | Message IDs | `edplg-pillage-N`, sharing the `edplg-` prefix so the stack can be repositioned as a group from ModernOverlay's controller |
+| Colour | Per category — Assets/Goods/Data each get a distinct colour (see below), rather than one flat colour for every pickup |
 | Position | X/Y origin on the legacy overlay's 1280x960 virtual screen; editable in **File → Settings → ED-PLG** (default 900, 120) |
 | User control | Toggle in **File → Settings → ED-PLG** |
 
 The overlay is a *notification*, not a display: it answers "what did I just get",
-and disappears. Standing information belongs in the inventory window.
+and disappears. Standing information belongs in the inventory window — except
+for the capacity panel below, which is deliberately a small standing exception
+to that rule.
+
+#### Category colour
+
+Each pillage line's colour is set by the picked-up resource's category —
+Component (Assets), Item (Goods), or Data — instead of one flat amber, so a
+fast loot run is scannable by category at a glance without reading every
+line (`overlay.CATEGORY_COLOURS`). The ship locker capacity warning (§8)
+keeps its own distinct red regardless of category, since urgency there
+matters more than category identity.
+
+#### Ship locker capacity panel
+
+An optional persistent panel drawn below the pillage stack — one row per
+category (Assets/Goods/Data), each a label, a track-and-fill bar, and a
+"total/capacity" value, all in that category's colour. Off by default
+(**"Show ship locker capacity bars on the overlay"** in Settings); when on,
+it redraws on every `ShipLocker` sync (and once at session start) so it
+reflects the current ship locker without needing the inventory window open.
+
+Unlike pillage lines, rows use a long TTL rather than a short fade — the
+panel is meant to look persistent between updates, not disappear between
+transfers. It uses EDMCModernOverlay's shape primitives (`send_shape`, via
+the same legacy-compatible client), not just text — see
+`docs/tech-spec.md` §6.3 for the exact payload shape. Backpack capacity
+bars were considered but left out of this pass: ship locker capacity is
+always known (flat 1000/category), while backpack capacity can be unknown
+per suit (§7), which would need extra handling this pass didn't need.
+
+#### ModernOverlay panel group (experimental)
+
+When the connected provider identifies itself as EDMCModernOverlay (as
+opposed to the original EDMCOverlay — see `edmcoverlay.MODERN_OVERLAY_IDENTITY`
+in the tech spec), ED-PLG makes a best-effort attempt to register itself as
+a ModernOverlay *plugin group*: a background panel behind the pillage stack
+and capacity bars, anchored to a screen corner/edge (**"Overlay panel
+anchor"** in Settings — nw/n/ne/w/center/e/sw/s/se) rather than positioned
+purely by raw pixel X/Y. This uses an internal ModernOverlay API
+(`overlay_plugin.overlay_api.define_plugin_group`) that sits outside the
+documented-by-example legacy `edmcoverlay` surface the rest of this plugin
+targets, and has not been validated against a live ModernOverlay install as
+of this writing. Any failure — import error, signature mismatch, legacy
+EDMCOverlay — is swallowed and ED-PLG simply falls back to plain positioned
+elements exactly as before, so this is safe to attempt but not guaranteed
+to look any different than the raw-X/Y behaviour until confirmed working
+in-game.
 
 ### 3.4.1 Notification sound
 
