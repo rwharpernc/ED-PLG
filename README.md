@@ -18,10 +18,10 @@ When you loot a container on foot, ED-PLG announces it — in the EDMC panel, in
 [Manufacturing Instructions] pillaged! New Inventory Total: 12
 ```
 
-That total is the number that matters when you are deciding whether a pickup is worth a backpack slot, and it is *not* just what is in your backpack — see [How it works](#how-it-works) below.
+That total is the number that matters when you are deciding whether a pickup is worth a backpack slot, and it is *not* just what is in your backpack — see [How it works](#how-it-works) below. The message's wording is configurable (see [Notification settings](#notification-settings) below).
 
 - **Live inventory tracking** across your suit backpack, ship locker, and fleet carrier locker
-- **Pillage notifications** on every pickup, with your new combined total
+- **Pillage notifications** on every pickup, with your new combined total — wording, a pickup sound, and which categories announce at all are all configurable
 - **In-game overlay alerts** via [EDMCModernOverlay](https://github.com/SweetJonnySauce/EDMCModernOverlay) (optional — the plugin works fine without it)
 - **Inventory window** — a tabbed view of everything you hold, with capacity bars per category, so you can see at a glance how close your backpack is to full
 - **Ship locker capacity warning** — an in-game overlay alert when a ship locker category hits 90% full, so you're not caught having to drop loot before you can offload it (at your ship, or remotely via an Apex shuttle)
@@ -75,6 +75,7 @@ The final layout must look like this:
     ├── inventory.py
     ├── suit.py
     ├── overlay.py
+    ├── sound.py
     ├── window.py
     ├── names.py
     ├── update.py
@@ -129,6 +130,15 @@ If the overlay throws an error at any point, ED-PLG disables it for the session 
 ### Muting a category's notifications
 
 **File → Settings → ED-PLG** has an **Announce pickups for** row with a checkbox per category (Assets, Goods, Data). Unchecking one silences that category's pillage notification — log line, overlay line, and the main-panel status — without affecting tracking: its counts still show up in the inventory window and count toward combined totals exactly as before. Useful if, say, you only care about being told about Data pickups and want Assets/Goods to stay quiet.
+
+### Notification settings
+
+**File → Settings → ED-PLG** also has:
+
+- **Pillage message** — a template for the `[Manufacturing Instructions] pillaged! New Inventory Total: 12`-style message, using `{item}` and `{total}` placeholders. Leave it blank to reset to the default. An invalid template (e.g. an unknown placeholder) falls back to the default rather than breaking notifications.
+- **Play a sound on pickup** — a short system beep alongside each pillage notification. Off by default; Windows-only (uses the standard library's `winsound`, so there's still nothing to `pip install`), and the checkbox is greyed out where it isn't available.
+
+Both apply to the log line, panel status, and the message EDMC records as the "last event" — not the overlay's terser stack line, which stays fixed so it keeps fitting the overlay.
 
 ### Settings
 
@@ -287,6 +297,7 @@ Module map, in rough order of the data flow described above:
 | [ui.py](plugin/ui.py) | EDMC main-window panel and settings tab |
 | [window.py](plugin/window.py) | The tabbed inventory window |
 | [overlay.py](plugin/overlay.py) | In-game overlay client |
+| [sound.py](plugin/sound.py) | Optional pickup notification sound (Windows `winsound`) |
 | [update.py](plugin/update.py) | Checks GitHub Releases and self-updates (see [Updates](#updates) above) |
 
 Dependencies point one way: `load.py` knows about everything; `ui.py` does not import `load.py` (the Inventory button is wired through a callback); `window.py` reads a `snapshot()` from the tracker rather than reaching into it.

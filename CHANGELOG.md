@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Configurable pillage message and a pickup notification sound.** Settings
+  now has a **Pillage message** template field (`{item}`/`{total}`
+  placeholders, falling back to the default on a blank or invalid template)
+  and a **Play a sound on pickup** checkbox (off by default; Windows-only via
+  the standard library's `winsound`, greyed out elsewhere) (`ui.py`,
+  `sound.py` (new), `load.py`).
 - **Preferences for muting per-category notifications and overlay position.**
   Settings now has a checkbox per tracked category (Assets/Goods/Data)
   controlling whether that category's pickups get a pillage notification

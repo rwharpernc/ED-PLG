@@ -25,12 +25,18 @@ logger = logging.getLogger(f"{appname}.{plugin_name}")
 CONFIG_OVERLAY_ENABLED = "edplg_overlay_enabled"
 CONFIG_OVERLAY_X = "edplg_overlay_x"
 CONFIG_OVERLAY_Y = "edplg_overlay_y"
+CONFIG_SOUND_ENABLED = "edplg_sound_enabled"
+CONFIG_MESSAGE_FORMAT = "edplg_message_format"
 
 # JSON list of TRACKED_CATEGORIES entries whose pickups get a pillage
 # notification (log line, overlay, panel status). Unset (empty string from
 # config) means "not configured yet" -> every category is announced; an
 # explicitly saved empty list ("[]") means the commander muted all of them.
 CONFIG_ANNOUNCE_CATEGORIES = "edplg_announce_categories"
+
+# Placeholders: {item} - resolved display name; {total} - combined total
+# across backpack/ship locker/carrier locker after this pickup.
+DEFAULT_MESSAGE_FORMAT = "[{item}] pillaged! New Inventory Total: {total}"
 
 # Color for the main-panel "Updated to vX" HyperlinkLabel - the only state
 # that widget ever shows text for (see _apply_version_state).
@@ -49,6 +55,8 @@ _overlay_var: Optional[tk.BooleanVar] = None
 _overlay_x_var: Optional[tk.StringVar] = None
 _overlay_y_var: Optional[tk.StringVar] = None
 _auto_update_var: Optional[tk.BooleanVar] = None
+_sound_var: Optional[tk.BooleanVar] = None
+_message_format_var: Optional[tk.StringVar] = None
 _announce_vars: Dict[str, tk.BooleanVar] = {}
 _override_vars: Dict[Tuple[str, str], tk.StringVar] = {}
 _override_defaults: Dict[Tuple[str, str], Optional[int]] = {}
@@ -156,9 +164,15 @@ def _clear_updated_state() -> None:
             pass  # Main window was closed before the timer fired.
 
 
-def create_prefs(parent: nb.Notebook, overlay_available: bool, cmdr: str) -> nb.Frame:
+def create_prefs(
+    parent: nb.Notebook,
+    overlay_available: bool,
+    sound_available: bool,
+    cmdr: str,
+) -> nb.Frame:
     """Create the ED-PLG tab in EDMC's settings window."""
     global _overlay_var, _overlay_x_var, _overlay_y_var, _auto_update_var
+    global _sound_var, _message_format_var
     global _announce_vars, _override_vars, _override_defaults
 
     frame = nb.Frame(parent)
@@ -178,6 +192,9 @@ def create_prefs(parent: nb.Notebook, overlay_available: bool, cmdr: str) -> nb.
         variable=_auto_update_var,
     ).grid(row=1, column=0, sticky=tk.W, padx=10, pady=(0, 10))
 
+    row = _build_output_format(frame, start_row=2)
+    row = _build_sound_pref(frame, sound_available, start_row=row)
+
     _overlay_var = tk.BooleanVar(value=overlay_enabled())
 
     nb.Checkbutton(
@@ -185,16 +202,18 @@ def create_prefs(parent: nb.Notebook, overlay_available: bool, cmdr: str) -> nb.
         text="Show pillage notifications on the in-game overlay",
         variable=_overlay_var,
         state=tk.NORMAL if overlay_available else tk.DISABLED,
-    ).grid(row=2, column=0, sticky=tk.W, padx=10, pady=(10, 0))
+    ).grid(row=row, column=0, sticky=tk.W, padx=10, pady=(10, 0))
+    row += 1
 
     hint = (
         "Requires EDMCModernOverlay (or EDMCOverlay)."
         if overlay_available
         else "Install EDMCModernOverlay to enable this."
     )
-    nb.Label(frame, text=hint).grid(row=3, column=0, sticky=tk.W, padx=10, pady=(2, 10))
+    nb.Label(frame, text=hint).grid(row=row, column=0, sticky=tk.W, padx=10, pady=(2, 10))
+    row += 1
 
-    row = _build_overlay_position(frame, start_row=4)
+    row = _build_overlay_position(frame, start_row=row)
     row = _build_announce_categories(frame, start_row=row)
 
     _override_vars = {}
@@ -202,6 +221,54 @@ def create_prefs(parent: nb.Notebook, overlay_available: bool, cmdr: str) -> nb.
     row = _build_capacity_overrides(frame, cmdr, start_row=row)
 
     return frame
+
+
+def _build_output_format(frame: nb.Frame, *, start_row: int) -> int:
+    """Add the configurable pillage-message format field."""
+    global _message_format_var
+
+    row = start_row
+    nb.Label(frame, text="Pillage message:").grid(
+        row=row, column=0, sticky=tk.W, padx=10, pady=(0, 2),
+    )
+    row += 1
+
+    _message_format_var = tk.StringVar(value=message_format())
+    nb.Entry(frame, textvariable=_message_format_var, width=55).grid(
+        row=row, column=0, sticky=tk.W, padx=10,
+    )
+    row += 1
+
+    nb.Label(
+        frame,
+        text="Placeholders: {item} (resource name), {total} (new combined total). Leave blank to reset to the default.",
+        wraplength=440,
+        justify=tk.LEFT,
+    ).grid(row=row, column=0, sticky=tk.W, padx=10, pady=(2, 10))
+    return row + 1
+
+
+def _build_sound_pref(frame: nb.Frame, sound_available: bool, *, start_row: int) -> int:
+    """Add the pickup notification-sound checkbox."""
+    global _sound_var
+
+    row = start_row
+    _sound_var = tk.BooleanVar(value=sound_enabled())
+    nb.Checkbutton(
+        frame,
+        text="Play a sound on pickup",
+        variable=_sound_var,
+        state=tk.NORMAL if sound_available else tk.DISABLED,
+    ).grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 0))
+    row += 1
+
+    if not sound_available:
+        nb.Label(frame, text="Not available on this platform.").grid(
+            row=row, column=0, sticky=tk.W, padx=10, pady=(2, 10),
+        )
+        row += 1
+
+    return row
 
 
 def _build_overlay_position(frame: nb.Frame, *, start_row: int) -> int:
@@ -358,6 +425,24 @@ def overlay_enabled() -> bool:
     return bool(config.get_bool(CONFIG_OVERLAY_ENABLED, default=True))
 
 
+def sound_enabled() -> bool:
+    return bool(config.get_bool(CONFIG_SOUND_ENABLED, default=False))
+
+
+def message_format() -> str:
+    return config.get_str(CONFIG_MESSAGE_FORMAT) or DEFAULT_MESSAGE_FORMAT
+
+
+def format_pillage_message(item: str, total: int) -> str:
+    """Render the configured pillage message, falling back to the default on a bad template."""
+    template = message_format()
+    try:
+        return template.format(item=item, total=total)
+    except (KeyError, IndexError, ValueError):
+        logger.warning("Invalid pillage message format %r; using the default", template)
+        return DEFAULT_MESSAGE_FORMAT.format(item=item, total=total)
+
+
 def overlay_position() -> Tuple[int, int]:
     """The in-game overlay's on-screen origin, clamped to its virtual screen."""
     x = config.get_int(CONFIG_OVERLAY_X, default=DEFAULT_ORIGIN_X)
@@ -392,6 +477,10 @@ def save_prefs(cmdr: str) -> bool:
         config.set(CONFIG_OVERLAY_ENABLED, _overlay_var.get())
     if _auto_update_var is not None:
         config.set(CONFIG_AUTO_UPDATE, _auto_update_var.get())
+    if _sound_var is not None:
+        config.set(CONFIG_SOUND_ENABLED, _sound_var.get())
+    if _message_format_var is not None:
+        config.set(CONFIG_MESSAGE_FORMAT, _message_format_var.get().strip())
 
     _save_overlay_position()
     _save_announce_categories()

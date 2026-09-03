@@ -20,6 +20,7 @@ from config import appname
 from . import __version__
 from .inventory import CATEGORY_SHORT, InventoryTracker
 from .overlay import PillageOverlay
+from .sound import PillageSound
 from .suit import SuitState
 from .update import UpdateManager, check_applied_update
 from . import names
@@ -51,6 +52,7 @@ if not logger.hasHandlers():
 
 _tracker = InventoryTracker()
 _overlay = PillageOverlay()
+_sound = PillageSound()
 _suit = SuitState()
 _ui_frame: Optional[tk.Frame] = None
 _updater: Optional[UpdateManager] = None
@@ -66,6 +68,7 @@ def plugin_start3(plugin_dir: str) -> str:
     suit.load_overrides()
     _overlay.set_enabled(ui.overlay_enabled())
     _overlay.set_position(*ui.overlay_position())
+    _sound.set_enabled(ui.sound_enabled())
     if not _overlay.available:
         logger.info("No overlay plugin found; pillage overlay disabled")
 
@@ -115,13 +118,14 @@ def _show_inventory() -> None:
 
 def plugin_prefs(parent, cmdr: str, is_beta: bool):
     """Create the ED-PLG settings tab."""
-    return ui.create_prefs(parent, _overlay.available, cmdr)
+    return ui.create_prefs(parent, _overlay.available, _sound.available, cmdr)
 
 
 def prefs_changed(cmdr: str, is_beta: bool) -> None:
     """Settings were saved."""
     _overlay.set_enabled(ui.save_prefs(cmdr))
     _overlay.set_position(*ui.overlay_position())
+    _sound.set_enabled(ui.sound_enabled())
 
 
 def journal_entry(
@@ -314,7 +318,7 @@ def _handle_backpack_change(
             continue
 
         combined_total = _tracker.get_combined_total(internal_name, category)
-        message = f"[{label}] pillaged! New Inventory Total: {combined_total}"
+        message = ui.format_pillage_message(label, combined_total)
         logger.info(message)
         pillage_messages.append(message)
         _overlay.notify(internal_name, f"+{delta}  {label}: {combined_total}")
@@ -323,6 +327,7 @@ def _handle_backpack_change(
     _tracker.sync_backpack_from_state(state)
 
     if pillage_messages:
+        _sound.play()
         ui.set_last_event(pillage_messages[-1])
         ui.set_status(f"+{len(pillage_messages)} item(s) pillaged")
         return pillage_messages[-1]

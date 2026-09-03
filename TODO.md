@@ -6,8 +6,12 @@ to any version; pick items up as desired.
 
 ## Features (design-spec §11)
 
-- [ ] Configurable output format or notification sounds
 - [ ] Import full microresource name table from FDevIDs at build time
+- [x] Configurable output format or notification sounds. Settings now has a
+  **Pillage message** template field (`{item}`/`{total}` placeholders) and a
+  **Play a sound on pickup** checkbox (Windows-only, via stdlib `winsound`;
+  `plugin/sound.py`, `plugin/ui.py`, `plugin/load.py`). Shipped in 1.1.0
+  (unreleased).
 - [x] Preferences for filtering tracked categories and overlay position.
   Settings now has an Assets/Goods/Data checkbox row (muting a category's
   pillage notification without stopping tracking) and an overlay position

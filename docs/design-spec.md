@@ -58,6 +58,14 @@ journal event. ED-PLG detects additions and emits:
 The total **X** reflects combined counts in the suit backpack and ship locker
 for that resource.
 
+This message's wording is configurable from **File → Settings → ED-PLG** as a
+template with `{item}` and `{total}` placeholders (default
+`"[{item}] pillaged! New Inventory Total: {total}"`); a blank or malformed
+template falls back to the default rather than erroring (`ui.py`'s
+`format_pillage_message`). It governs the log line, panel "last event" label,
+and the return value passed to EDMC — not the terser overlay line (§3.4),
+which stays fixed so it keeps fitting the overlay's stack.
+
 ### 3.2 UI panel
 
 A single row on the EDMC main window displays:
@@ -100,7 +108,16 @@ When an overlay plugin is present, each pickup is also drawn in-game:
 The overlay is a *notification*, not a display: it answers "what did I just get",
 and disappears. Standing information belongs in the inventory window.
 
-### 3.4.1 Announce-category preference
+### 3.4.1 Notification sound
+
+An optional "Play a sound on pickup" checkbox (`sound.py`, off by default)
+plays a short system sound once per `BackpackChange` event that produced at
+least one announced pillage message. It uses the stdlib-only `winsound`
+module, so it is Windows-only — the same "stays optional / no pip
+dependency" shape as the overlay: unavailable on other platforms, the
+checkbox is simply disabled there rather than erroring.
+
+### 3.4.2 Announce-category preference
 
 The Settings tab also lists a checkbox per tracked category (Assets, Goods,
 Data) controlling whether that category's pickups produce a pillage
@@ -329,7 +346,6 @@ These are inherited from the game and EDMC, not bugs in ED-PLG:
 
 Possible enhancements, not yet committed:
 
-- Configurable output format or notification sounds.
 - Import full microresource name table from FDevIDs at build time.
 
 ## 13. References
