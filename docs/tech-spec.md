@@ -2,7 +2,7 @@
 
 **Version:** 1.1.0  
 **Author:** CMDR Bocheaux  
-**Last updated:** 2026-08-25
+**Last updated:** 2026-09-03
 
 ## 1. Overview
 
