@@ -7,9 +7,12 @@ to any version; pick items up as desired.
 ## Features (design-spec §11)
 
 - [ ] Configurable output format or notification sounds
-- [ ] Search / filter box in the inventory window
 - [ ] Import full microresource name table from FDevIDs at build time
 - [ ] Preferences for filtering tracked categories and overlay position
+- [x] Search / filter box in the inventory window. A single filter box above
+  the tabs (`plugin/window.py`) narrows the item listing on all three tabs to
+  resources whose display name contains the typed text; category totals and
+  capacity bars stay unfiltered. Shipped in 1.1.0 (unreleased).
 
 ## Fixable gaps
 

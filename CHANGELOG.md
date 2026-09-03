@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Filter box in the inventory window.** A single box above the tabs
+  narrows the item listing on all three tabs (Backpack/Ship Locker/Carrier
+  Locker) to resources whose display name contains the typed text
+  (case-insensitive); category totals and capacity bars stay unfiltered
+  (`window.py`).
 - **Auto-update, off by default (opt-in, not opt-out).** Once enabled in
   Settings, ED-PLG checks GitHub Releases once per EDMC start and, if a
   newer one exists, downloads and stages it over the current install

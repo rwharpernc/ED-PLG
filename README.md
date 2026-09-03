@@ -107,6 +107,8 @@ Click **Inventory** on the ED-PLG panel:
 
 Each tab shows a total and capacity bar for **Assets**, **Goods**, and **Data**, then every resource you hold and its count. It updates live as you loot and can stay open while you play.
 
+The **Filter** box above the tabs narrows the item listing on all three tabs to resources whose name contains what you type (case-insensitive) — the category totals and capacity bars stay unfiltered so you can still see the full picture while hunting for one resource. Clear it, or click **Clear**, to see everything again.
+
 Because your suit sets your capacity, the heading names it and whether the capacity mod is fitted — for example `Suit: Maverick Suit (Grade 4) + Extra Backpack Capacity`.
 
 ### Overlay notifications

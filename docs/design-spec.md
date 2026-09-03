@@ -111,6 +111,11 @@ each showing:
 2. A total and capacity bar per category (Assets, Goods, Data).
 3. Every resource held, with its count, sorted by category then descending count.
 
+A single **Filter** box above the tabs narrows the item listing (all three
+tabs) to resources whose display name contains the typed text
+(case-insensitive); category totals and capacity bars are unaffected by it,
+since those describe the whole store, not the filtered view.
+
 This is the "should I loot this?" view: the capacity bar shows how close the
 backpack is to full, and the item list shows how much of a resource is already
 banked elsewhere. A category's bar and total turn amber at 90% of capacity — the
@@ -314,7 +319,6 @@ These are inherited from the game and EDMC, not bugs in ED-PLG:
 Possible enhancements, not yet committed:
 
 - Configurable output format or notification sounds.
-- Search / filter box in the inventory window.
 - Import full microresource name table from FDevIDs at build time.
 - Preferences for filtering tracked categories and overlay position.
 

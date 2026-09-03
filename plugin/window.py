@@ -205,6 +205,15 @@ class InventoryWindow:
         self._heading = ttk.Label(container, text="", anchor=tk.W)
         self._heading.pack(fill=tk.X, padx=10, pady=(10, 6))
 
+        filter_bar = ttk.Frame(container)
+        filter_bar.pack(fill=tk.X, padx=10, pady=(0, 6))
+        ttk.Label(filter_bar, text="Filter:").pack(side=tk.LEFT, padx=(0, 6))
+        self._filter_var = tk.StringVar()
+        self._filter_var.trace_add("write", lambda *_args: self.refresh())
+        filter_entry = ttk.Entry(filter_bar, textvariable=self._filter_var)
+        filter_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(filter_bar, text="Clear", command=self._clear_filter).pack(side=tk.LEFT, padx=(6, 0))
+
         notebook = ttk.Notebook(container, style=STYLE_NOTEBOOK)
         notebook.pack(fill=tk.BOTH, expand=True, padx=10)
 
@@ -259,9 +268,13 @@ class InventoryWindow:
             else "Not yet synced this session — loot, resupply, or disembark to refresh."
         )
         notes = {"backpack": backpack_note, "ship_locker": None, "fleet_carrier_locker": None}
+        filter_text = self._filter_var.get().strip()
 
         for key, tab in self._tabs.items():
-            tab.update(snapshot.get(key, {}), capacities[key], note=notes[key])
+            tab.update(snapshot.get(key, {}), capacities[key], note=notes[key], filter_text=filter_text)
+
+    def _clear_filter(self) -> None:
+        self._filter_var.set("")
 
     def close(self) -> None:
         if self.alive:
@@ -342,9 +355,12 @@ class _LocationTab:
         capacities: Mapping[str, int],
         *,
         note: Optional[str] = None,
+        filter_text: str = "",
     ) -> None:
         self._note["text"] = note or ""
 
+        # Totals/bars always reflect the true category contents - only the
+        # item listing below is narrowed by the filter box.
         for category in TRACKED_CATEGORIES:
             items = store.get(category, {})
             total = sum(items.values())
@@ -361,20 +377,27 @@ class _LocationTab:
 
         self._tree.delete(*self._tree.get_children())
 
+        needle = filter_text.strip().lower()
+        had_any_items = False
         rows = 0
         for category in TRACKED_CATEGORIES:
             items = store.get(category, {})
             for name, count in sorted(items.items(), key=lambda kv: (-kv[1], kv[0])):
+                had_any_items = True
+                label = display_name(name)
+                if needle and needle not in label.lower():
+                    continue
                 self._tree.insert(
                     "",
                     tk.END,
-                    values=(display_name(name), CATEGORY_SHORT[category], count),
+                    values=(label, CATEGORY_SHORT[category], count),
                     tags=("odd",) if rows % 2 else (),
                 )
                 rows += 1
 
         if rows == 0:
-            self._tree.insert("", tk.END, values=("(nothing stored)", "", ""))
+            message = f'(no matches for "{filter_text.strip()}")' if needle and had_any_items else "(nothing stored)"
+            self._tree.insert("", tk.END, values=(message, "", ""))
 
     def _set_capacity_level(
         self,
