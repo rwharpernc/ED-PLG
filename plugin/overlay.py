@@ -27,8 +27,10 @@ ID_PREFIX = "edplg-pillage-"
 MAX_LINES = 5
 TTL_SECONDS = 8
 # Legacy overlay coordinates are on a 1280x960 virtual screen.
-ORIGIN_X = 900
-ORIGIN_Y = 120
+MAX_ORIGIN_X = 1280
+MAX_ORIGIN_Y = 960
+DEFAULT_ORIGIN_X = 900
+DEFAULT_ORIGIN_Y = 120
 LINE_HEIGHT = 18
 COLOUR = "#ffbf00"
 TEXT_SIZE = "normal"
@@ -43,6 +45,8 @@ class PillageOverlay:
         # (internal_name, text, expiry, colour) — newest first.
         self._lines: List[Tuple[str, str, float, str]] = []
         self._rendered_rows = 0
+        self._origin_x = DEFAULT_ORIGIN_X
+        self._origin_y = DEFAULT_ORIGIN_Y
 
     @property
     def available(self) -> bool:
@@ -52,6 +56,11 @@ class PillageOverlay:
         if self._enabled and not enabled:
             self.clear()
         self._enabled = enabled
+
+    def set_position(self, x: int, y: int) -> None:
+        """Move where the pillage stack draws, clamped to the legacy overlay's virtual screen."""
+        self._origin_x = max(0, min(MAX_ORIGIN_X, x))
+        self._origin_y = max(0, min(MAX_ORIGIN_Y, y))
 
     def notify(
         self,
@@ -110,8 +119,8 @@ class PillageOverlay:
                 f"{ID_PREFIX}{row}",
                 text,
                 colour,
-                ORIGIN_X,
-                ORIGIN_Y + row * LINE_HEIGHT,
+                self._origin_x,
+                self._origin_y + row * LINE_HEIGHT,
                 ttl=ttl,
                 size=TEXT_SIZE,
             )

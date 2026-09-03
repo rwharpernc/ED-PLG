@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, FrozenSet, Optional, Tuple
 
 import tkinter as tk
 
@@ -15,12 +16,21 @@ from ttkHyperlinkLabel import HyperlinkLabel
 
 from . import __version__, suit
 from .inventory import CATEGORY_SHORT, TRACKED_CATEGORIES
+from .overlay import DEFAULT_ORIGIN_X, DEFAULT_ORIGIN_Y, MAX_ORIGIN_X, MAX_ORIGIN_Y
 from .update import CONFIG_AUTO_UPDATE, RELEASES_PAGE_URL
 
 plugin_name = os.path.basename(os.path.dirname(__file__))
 logger = logging.getLogger(f"{appname}.{plugin_name}")
 
 CONFIG_OVERLAY_ENABLED = "edplg_overlay_enabled"
+CONFIG_OVERLAY_X = "edplg_overlay_x"
+CONFIG_OVERLAY_Y = "edplg_overlay_y"
+
+# JSON list of TRACKED_CATEGORIES entries whose pickups get a pillage
+# notification (log line, overlay, panel status). Unset (empty string from
+# config) means "not configured yet" -> every category is announced; an
+# explicitly saved empty list ("[]") means the commander muted all of them.
+CONFIG_ANNOUNCE_CATEGORIES = "edplg_announce_categories"
 
 # Color for the main-panel "Updated to vX" HyperlinkLabel - the only state
 # that widget ever shows text for (see _apply_version_state).
@@ -36,7 +46,10 @@ _status_label: Optional[tk.Label] = None
 _last_event_label: Optional[tk.Label] = None
 _version_label: Optional[HyperlinkLabel] = None
 _overlay_var: Optional[tk.BooleanVar] = None
+_overlay_x_var: Optional[tk.StringVar] = None
+_overlay_y_var: Optional[tk.StringVar] = None
 _auto_update_var: Optional[tk.BooleanVar] = None
+_announce_vars: Dict[str, tk.BooleanVar] = {}
 _override_vars: Dict[Tuple[str, str], tk.StringVar] = {}
 _override_defaults: Dict[Tuple[str, str], Optional[int]] = {}
 
@@ -145,7 +158,8 @@ def _clear_updated_state() -> None:
 
 def create_prefs(parent: nb.Notebook, overlay_available: bool, cmdr: str) -> nb.Frame:
     """Create the ED-PLG tab in EDMC's settings window."""
-    global _overlay_var, _auto_update_var, _override_vars, _override_defaults
+    global _overlay_var, _overlay_x_var, _overlay_y_var, _auto_update_var
+    global _announce_vars, _override_vars, _override_defaults
 
     frame = nb.Frame(parent)
     frame.columnconfigure(0, weight=1)
@@ -180,11 +194,71 @@ def create_prefs(parent: nb.Notebook, overlay_available: bool, cmdr: str) -> nb.
     )
     nb.Label(frame, text=hint).grid(row=3, column=0, sticky=tk.W, padx=10, pady=(2, 10))
 
+    row = _build_overlay_position(frame, start_row=4)
+    row = _build_announce_categories(frame, start_row=row)
+
     _override_vars = {}
     _override_defaults = {}
-    row = _build_capacity_overrides(frame, cmdr, start_row=4)
+    row = _build_capacity_overrides(frame, cmdr, start_row=row)
 
     return frame
+
+
+def _build_overlay_position(frame: nb.Frame, *, start_row: int) -> int:
+    """Add the in-game overlay's on-screen position fields (§overlay position)."""
+    global _overlay_x_var, _overlay_y_var
+
+    row = start_row
+    x, y = overlay_position()
+    _overlay_x_var = tk.StringVar(value=str(x))
+    _overlay_y_var = tk.StringVar(value=str(y))
+
+    position = nb.Frame(frame)
+    position.grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 2))
+    nb.Label(position, text="Overlay position — X:").pack(side=tk.LEFT)
+    nb.Entry(position, textvariable=_overlay_x_var, width=6).pack(side=tk.LEFT, padx=(4, 10))
+    nb.Label(position, text="Y:").pack(side=tk.LEFT)
+    nb.Entry(position, textvariable=_overlay_y_var, width=6).pack(side=tk.LEFT, padx=(4, 0))
+    row += 1
+
+    nb.Label(
+        frame,
+        text=f"On the legacy overlay's virtual screen (0-{MAX_ORIGIN_X} x 0-{MAX_ORIGIN_Y}). "
+        f"Default {DEFAULT_ORIGIN_X}, {DEFAULT_ORIGIN_Y}.",
+    ).grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 10))
+    return row + 1
+
+
+def _build_announce_categories(frame: nb.Frame, *, start_row: int) -> int:
+    """Add per-category checkboxes for which pickups get a pillage notification."""
+    global _announce_vars
+
+    row = start_row
+    nb.Label(frame, text="Announce pickups for:").grid(
+        row=row, column=0, sticky=tk.W, padx=10, pady=(0, 2),
+    )
+    row += 1
+
+    enabled = announced_categories()
+    _announce_vars = {}
+
+    categories_row = nb.Frame(frame)
+    categories_row.grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 10))
+    for category in TRACKED_CATEGORIES:
+        var = tk.BooleanVar(value=category in enabled)
+        _announce_vars[category] = var
+        nb.Checkbutton(categories_row, text=CATEGORY_SHORT[category], variable=var).pack(
+            side=tk.LEFT, padx=(0, 12),
+        )
+    row += 1
+
+    nb.Label(
+        frame,
+        text="Unchecked categories are still tracked and counted — only their log/overlay/panel pickup notification is muted.",
+        wraplength=440,
+        justify=tk.LEFT,
+    ).grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 10))
+    return row + 1
 
 
 def _build_capacity_overrides(frame: nb.Frame, cmdr: str, *, start_row: int) -> int:
@@ -284,12 +358,43 @@ def overlay_enabled() -> bool:
     return bool(config.get_bool(CONFIG_OVERLAY_ENABLED, default=True))
 
 
+def overlay_position() -> Tuple[int, int]:
+    """The in-game overlay's on-screen origin, clamped to its virtual screen."""
+    x = config.get_int(CONFIG_OVERLAY_X, default=DEFAULT_ORIGIN_X)
+    y = config.get_int(CONFIG_OVERLAY_Y, default=DEFAULT_ORIGIN_Y)
+    return max(0, min(MAX_ORIGIN_X, x)), max(0, min(MAX_ORIGIN_Y, y))
+
+
+def announced_categories() -> FrozenSet[str]:
+    """
+    Categories whose pickups get a pillage notification (log line, overlay,
+    panel status). Counts are always tracked for every category regardless
+    of this setting — it only gates the notification.
+    """
+    raw = config.get_str(CONFIG_ANNOUNCE_CATEGORIES)
+    if not raw:
+        return frozenset(TRACKED_CATEGORIES)
+
+    try:
+        selected = json.loads(raw)
+    except (TypeError, ValueError):
+        return frozenset(TRACKED_CATEGORIES)
+
+    if not isinstance(selected, list):
+        return frozenset(TRACKED_CATEGORIES)
+
+    return frozenset(category for category in selected if category in TRACKED_CATEGORIES)
+
+
 def save_prefs(cmdr: str) -> bool:
     """Persist settings from the prefs tab; returns the new overlay state."""
     if _overlay_var is not None:
         config.set(CONFIG_OVERLAY_ENABLED, _overlay_var.get())
     if _auto_update_var is not None:
         config.set(CONFIG_AUTO_UPDATE, _auto_update_var.get())
+
+    _save_overlay_position()
+    _save_announce_categories()
 
     for (loadout_id, category), var in _override_vars.items():
         text = var.get().strip()
@@ -316,6 +421,28 @@ def save_prefs(cmdr: str) -> bool:
 
     suit.save_overrides()
     return overlay_enabled()
+
+
+def _save_overlay_position() -> None:
+    if _overlay_x_var is None or _overlay_y_var is None:
+        return
+
+    try:
+        x = int(_overlay_x_var.get().strip())
+        y = int(_overlay_y_var.get().strip())
+    except ValueError:
+        logger.debug("Ignoring non-numeric overlay position %r/%r", _overlay_x_var.get(), _overlay_y_var.get())
+        return  # Leave the previously stored value untouched.
+
+    config.set(CONFIG_OVERLAY_X, max(0, min(MAX_ORIGIN_X, x)))
+    config.set(CONFIG_OVERLAY_Y, max(0, min(MAX_ORIGIN_Y, y)))
+
+
+def _save_announce_categories() -> None:
+    if not _announce_vars:
+        return
+    selected = [category for category, var in _announce_vars.items() if var.get()]
+    config.set(CONFIG_ANNOUNCE_CATEGORIES, json.dumps(selected))
 
 
 def set_status(message: str) -> None:

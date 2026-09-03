@@ -157,12 +157,12 @@ class InventoryTracker:
     def apply_backpack_change(
         self,
         entry: Mapping[str, Any],
-    ) -> Iterable[Tuple[str, str, int, int]]:
+    ) -> Iterable[Tuple[str, str, str, int, int]]:
         """
         Process a BackpackChange event.
 
-        Yields (display_label, internal_name, delta, new_backpack_total) for
-        each Added item. Removed items update counts but are not yielded.
+        Yields (display_label, internal_name, category, delta, new_backpack_total)
+        for each Added item. Removed items update counts but are not yielded.
         """
         if entry.get("Added"):
             for item in entry["Added"]:
@@ -249,7 +249,7 @@ class InventoryTracker:
         *,
         delta_sign: int,
         pillage: bool,
-    ) -> Iterable[Tuple[str, str, int, int]]:
+    ) -> Iterable[Tuple[str, str, str, int, int]]:
         category = self._normalise_category(item.get("Type", ""))
         if category not in TRACKED_CATEGORIES:
             return
@@ -270,7 +270,7 @@ class InventoryTracker:
                 internal_name,
                 item.get("Name_Localised"),
             )
-            yield label, internal_name, delta, new_total
+            yield label, internal_name, category, delta, new_total
 
     @staticmethod
     def _normalise_category(category: str) -> str:

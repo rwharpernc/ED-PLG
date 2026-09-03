@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Preferences for muting per-category notifications and overlay position.**
+  Settings now has a checkbox per tracked category (Assets/Goods/Data)
+  controlling whether that category's pickups get a pillage notification
+  (log line, overlay line, panel status) — tracking and totals are
+  unaffected either way — plus an overlay position X/Y field (default 900,
+  120) as an alternative to repositioning via ModernOverlay's controller
+  (`ui.py`, `overlay.py`, `load.py`).
 - **Filter box in the inventory window.** A single box above the tabs
   narrows the item listing on all three tabs (Backpack/Ship Locker/Carrier
   Locker) to resources whose display name contains the typed text

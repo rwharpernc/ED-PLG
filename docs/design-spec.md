@@ -94,10 +94,21 @@ When an overlay plugin is present, each pickup is also drawn in-game:
 | Lifetime | 8 seconds per line |
 | Repeat pickups | Update the item's existing line and float it to the top |
 | Message IDs | `edplg-pillage-N`, sharing the `edplg-` prefix so the stack can be repositioned as a group from ModernOverlay's controller |
+| Position | X/Y origin on the legacy overlay's 1280x960 virtual screen; editable in **File → Settings → ED-PLG** (default 900, 120) |
 | User control | Toggle in **File → Settings → ED-PLG** |
 
 The overlay is a *notification*, not a display: it answers "what did I just get",
 and disappears. Standing information belongs in the inventory window.
+
+### 3.4.1 Announce-category preference
+
+The Settings tab also lists a checkbox per tracked category (Assets, Goods,
+Data) controlling whether that category's pickups produce a pillage
+notification — log line, overlay line, and main-panel status. Unchecking a
+category never stops it being tracked or counted (inventory totals and the
+window are unaffected); it only silences the "you just picked this up"
+notification path for that category. Ship locker capacity warnings (§8) are
+gated by the same preference, per category.
 
 ### 3.5 Inventory window
 
@@ -320,7 +331,6 @@ Possible enhancements, not yet committed:
 
 - Configurable output format or notification sounds.
 - Import full microresource name table from FDevIDs at build time.
-- Preferences for filtering tracked categories and overlay position.
 
 ## 13. References
 

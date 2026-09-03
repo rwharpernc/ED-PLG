@@ -18,7 +18,7 @@ from companion import CAPIData
 from config import appname
 
 from . import __version__
-from .inventory import CATEGORY_SHORT, InventoryTracker, TRACKED_CATEGORIES
+from .inventory import CATEGORY_SHORT, InventoryTracker
 from .overlay import PillageOverlay
 from .suit import SuitState
 from .update import UpdateManager, check_applied_update
@@ -65,6 +65,7 @@ def plugin_start3(plugin_dir: str) -> str:
     names.load_learned_names()
     suit.load_overrides()
     _overlay.set_enabled(ui.overlay_enabled())
+    _overlay.set_position(*ui.overlay_position())
     if not _overlay.available:
         logger.info("No overlay plugin found; pillage overlay disabled")
 
@@ -120,6 +121,7 @@ def plugin_prefs(parent, cmdr: str, is_beta: bool):
 def prefs_changed(cmdr: str, is_beta: bool) -> None:
     """Settings were saved."""
     _overlay.set_enabled(ui.save_prefs(cmdr))
+    _overlay.set_position(*ui.overlay_position())
 
 
 def journal_entry(
@@ -282,7 +284,10 @@ def _warn_ship_locker_capacity() -> None:
     both write through the same ShipLocker journal event this is called
     from — so no separate Apex-specific handling is needed.
     """
+    announced_categories = ui.announced_categories()
     for category, total, capacity in _tracker.ship_locker_capacity_warnings():
+        if category not in announced_categories:
+            continue
         label = CATEGORY_SHORT[category]
         message = f"⚠ Ship Locker {label}: {total}/{capacity} — nearing capacity"
         logger.warning(message)
@@ -299,12 +304,16 @@ def _handle_backpack_change(
     state: Dict[str, Any],
 ) -> Optional[str]:
     pillage_messages = []
+    announced_categories = ui.announced_categories()
 
-    for label, internal_name, delta, _backpack_total in _tracker.apply_backpack_change(entry):
-        combined_total = _tracker.get_combined_total(
-            internal_name,
-            _category_for_item(entry, internal_name),
-        )
+    for label, internal_name, category, delta, _backpack_total in _tracker.apply_backpack_change(entry):
+        # Counts are always tracked regardless of the announce-category prefs
+        # (see ui.announced_categories) - only the pillage notification (log
+        # line, overlay, panel) for a muted category is suppressed here.
+        if category not in announced_categories:
+            continue
+
+        combined_total = _tracker.get_combined_total(internal_name, category)
         message = f"[{label}] pillaged! New Inventory Total: {combined_total}"
         logger.info(message)
         pillage_messages.append(message)
@@ -319,16 +328,6 @@ def _handle_backpack_change(
         return pillage_messages[-1]
 
     return None
-
-
-def _category_for_item(entry: Dict[str, Any], internal_name: str) -> str:
-    for section in ("Added", "Removed"):
-        for item in entry.get(section, []):
-            if item.get("Name", "").lower().replace(" ", "") == internal_name:
-                category = item.get("Type", "Component")
-                if category in TRACKED_CATEGORIES:
-                    return category
-    return "Component"
 
 
 def _carrier_callsign(data: CAPIData) -> Optional[str]:

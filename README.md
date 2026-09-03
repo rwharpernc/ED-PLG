@@ -122,9 +122,13 @@ With an overlay plugin installed, each pickup draws a line in-game:
 
 Up to five lines stack, newest first, each lasting 8 seconds. Looting the same item again **updates its existing line** instead of adding a duplicate, so a fast loot run does not spam the stack.
 
-Every ED-PLG message uses the `edplg-` ID prefix, which means you can reposition the whole stack from ModernOverlay's controller by adding an `edplg-` prefix group. Do that rather than editing coordinates in `overlay.py` — your change will survive plugin updates.
+Every ED-PLG message uses the `edplg-` ID prefix, which means you can reposition the whole stack from ModernOverlay's controller by adding an `edplg-` prefix group. Alternatively, **File → Settings → ED-PLG** has an **Overlay position** X/Y field (default 900, 120, on the legacy overlay's 1280x960 virtual screen) if you'd rather set it directly without a ModernOverlay group.
 
 If the overlay throws an error at any point, ED-PLG disables it for the session rather than letting it break inventory tracking. Tracking is the job; the overlay is a nicety.
+
+### Muting a category's notifications
+
+**File → Settings → ED-PLG** has an **Announce pickups for** row with a checkbox per category (Assets, Goods, Data). Unchecking one silences that category's pillage notification — log line, overlay line, and the main-panel status — without affecting tracking: its counts still show up in the inventory window and count toward combined totals exactly as before. Useful if, say, you only care about being told about Data pickups and want Assets/Goods to stay quiet.
 
 ### Settings
 
