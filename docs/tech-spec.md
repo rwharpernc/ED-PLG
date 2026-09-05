@@ -1,6 +1,6 @@
 # ED-PLG Technical Specification
 
-**Version:** 1.2.0  
+**Version:** 1.3.0  
 **Author:** CMDR Bocheaux  
 **Last updated:** 2026-09-05
 

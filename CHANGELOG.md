@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-05
+
 ### Added
 
 - **All four inventory bars can now show on the in-game overlay, each
@@ -70,6 +72,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   three real Settings-tab-breaking bugs in a row had been invisible to the
   smoke suite because the stubs it ran against didn't behave like EDMC.
 
+### Changed
+
+- **README rewritten to match sibling project EDPPMT's format**, focused on
+  what a commander does with the plugin rather than how it's built:
+  Features/Install/Updates/Using ED-PLG up front, a release-zip-first
+  install flow (matching the GitHub Releases page rather than a git-clone
+  workflow), and internals (baselines/deltas, resource-name resolution,
+  the module map, dependency graph) moved out entirely to `docs/tech-spec.md`
+  and `docs/design-spec.md`, which already covered them. No content was
+  dropped, only relocated or condensed — see those docs for anything that
+  used to live in a README section with no equivalent here anymore.
+
 ## [1.2.0] - 2026-09-05
 
 ### Added
@@ -118,7 +132,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Scorpion 2t; Rhino shows a count but no capacity yet — see Known
   Limitations) while in one, and hidden entirely on foot with no vehicle.
   This is tonnage only — commodity identity, prices, and market data remain
-  out of scope; see README's Scope section and design-spec §2/§12.
+  out of scope; see design-spec §2/§12.
 - **Carrier Locker tab hidden without a confirmed carrier.** The inventory
   window's Carrier Locker tab is now hidden entirely — not just shown
   empty — until ED-PLG has confirmed the commander actually owns a fleet
