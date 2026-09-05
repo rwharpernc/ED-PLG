@@ -1,6 +1,6 @@
 # ED-PLG Design Specification
 
-**Version:** 1.1.0  
+**Version:** 1.2.0  
 **Author:** CMDR Bocheaux  
 **Last updated:** 2026-09-05
 
@@ -91,6 +91,7 @@ Everything below the header collapses/expands together:
 | Status | Current sync state (e.g. "Inventory synced", "+2 item(s) pillaged") — the first line of the content area, directly under the title |
 | Inventory bars | One row each for Backpack and Ship Locker (always shown), Carrier Locker (only once a fleet carrier is confirmed for this commander), and Cargo (when a vehicle applies — §12). Each has its own signature colour (`ui.BAR_COLOURS` — Backpack blue, Ship Locker green, Carrier Locker violet, Cargo orange, echoing this plugin's existing overlay category colours) drawn as the bar's outline even at 0%, so no bar ever reads as a flat gray box; the fill turns red once its store is completely full. Each row also shows a fixed-width label and a `used/capacity` (or bare count where capacity is unknown) reading. Clicking anywhere on a row opens the inventory window (§3.5) — there is no separate button. |
 | Last event | Most recent pillage message (green text) |
+| Hint | Static "Click Inventory Bar to Open Inventory Panel" line at the bottom of the panel, since removing the old Inventory button in favour of clickable bars wasn't obviously discoverable on its own |
 
 The Carrier Locker row is gated on `InventoryTracker.fleet_carrier_callsign`
 being set — which only happens from real Frontier CAPI locker data (see
@@ -117,8 +118,15 @@ correct under any theme regardless of that gap — the same approach this
 developer's other plugins (e.g. EDMMM) already use for their own bars. The
 track colour itself comes from EDMC's own `theme.current['background']`
 value (see Technical Specification §6.6) rather than being inferred from any
-of this plugin's own widgets, so it's correct under Dark theme regardless of
-exactly when EDMC has gotten around to recolouring any particular widget.
+of this plugin's own widgets. That value is correct once EDMC has actually
+applied its theme — but a live diagnostic confirmed EDMC hadn't finished
+doing so a full second after this plugin started, on a real Dark-theme
+install, so the panel also retries redrawing the bars a few times over the
+following seconds (see Technical Specification §6.6) rather than risking a
+bar getting stuck showing whatever it guessed during that startup window.
+**This has not fully resolved the issue in every reported case** — see §11's
+Known Limitations entry and `TODO.md`'s Known Issues for the current state
+and what's still unexplained.
 
 Every row-level container (the title header, the bars container, each bar
 row) is sized to its own content (`sticky="w"`, never `"ew"`) rather than
@@ -478,6 +486,14 @@ These are inherited from the game and EDMC, not bugs in ED-PLG:
   capacity figure: Frontier describes its hold as expandable up to 24t with no
   confirmed journal field yet for the actual fitted amount. Its bar shows the
   current cargo count only, until that's confirmed against a real journal entry.
+- The main-panel bar track colour has been reported as still rendering light
+  under EDMC's Dark theme on at least one real install, despite several fix
+  attempts (see `TODO.md`'s Known Issues for the full investigation history
+  and next steps). EDMC's own theme-apply timing relative to a plugin's
+  `plugin_app()` call isn't something a plugin can query directly, which is
+  the working theory behind every attempt so far - unconfirmed as the full
+  explanation. Purely cosmetic; every bar's value, coloured outline, and
+  click-to-open behaviour are unaffected.
 
 ## 12. Ship & SRV Cargo
 

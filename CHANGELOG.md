@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-05
+
 ### Added
 
 - **Collapsible main panel with at-a-glance inventory bars.** The panel
@@ -26,27 +28,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tk.Canvas` rather than `ttk.Progressbar`, after the latter rendered as
   an oversized, unthemed white box under EDMC's theming.
 
-  Getting the bar track colour actually correct under Dark theme took
-  several passes, the first few plausible-looking but wrong:
+  **Known issue: the bar track colour has still been reported as wrong
+  under EDMC's Dark theme on at least one real install**, despite four
+  attempts across this release (see `TODO.md`'s Known Issues for the full
+  history, and README's Known Limitations for the user-facing note) —
   `theme.active`/`theme.THEME_DEFAULT` (mirroring EDMMM) silently
   evaluated as "always light"; reading a Frame's or a Label's own
   background back both assumed EDMC's `theme.update()` had already
-  recoloured that specific widget by the time we asked. A diagnostic log
-  line finally confirmed the real cause directly from a live session:
-  `theme.current` (the dict EDMC's own theming populates) was still
-  **empty** a full second after `plugin_start3` on a real Dark-theme
-  install - EDMC hadn't finished applying its own theme yet by the time
-  this plugin's panel first drew its bars, and nothing ever prompted a
-  redraw once it did (the next redraw only happens on a journal event,
-  which has no relationship to theme timing). `create_plugin_app` now
-  schedules a handful of retries (0.5s/1.5s/3s/6s via `root.after()`) that
-  recolour the bars from their last-known data without needing a fresh
-  journal event, so a slow theme-apply can no longer strand them
-  permanently on their pre-theme guess. Also recurses `theme.update()`
-  through this panel's entire widget subtree at creation (EDMC's own
-  `update()` only walks one level of children, confirmed from its source -
-  not deep enough for this panel's nested frame/row/label/canvas
-  structure), for whatever it's independently worth.
+  recoloured that specific widget by the time we asked; reading
+  `theme.current['background']` directly plus retrying the redraw a few
+  times via `root.after()` (0.5s/1.5s/3s/6s, in case EDMC's own
+  `theme.apply()` hadn't run yet at panel-creation time) fixed the *exact*
+  failure a diagnostic log line had captured from a live session — but a
+  later session still showed the bug. Left in this partially-mitigated
+  state rather than continuing to guess; tracked for whoever picks it up
+  next with real diagnostic log output to work from. Also recurses
+  `theme.update()` through this panel's entire widget subtree at creation
+  (EDMC's own `update()` only walks one level of children, confirmed from
+  its source - not deep enough for this panel's nested frame/row/label/
+  canvas structure) - independently correct regardless of the above.
 - **Ship & SRV cargo-hold tracking (scope extension).** A new `cargo.py`
   module tracks which vehicle (ship, on foot, or SRV) the commander
   currently occupies from `Embark`/`Disembark`/`LaunchSRV`/`DockSRV` journal

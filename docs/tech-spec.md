@@ -1,6 +1,6 @@
 # ED-PLG Technical Specification
 
-**Version:** 1.1.0  
+**Version:** 1.2.0  
 **Author:** CMDR Bocheaux  
 **Last updated:** 2026-09-05
 
@@ -601,29 +601,33 @@ has run, `create_plugin_app` redraws every bar once more immediately after
 that call, so the very first paint already reflects the real background
 rather than the pre-theme default.
 
-**Confirmed root cause** (via the diagnostic log line below, on a real
-Dark-theme install): `theme.current` was still **empty** a full second after
-`plugin_start3` — EDMC hadn't finished applying its own theme by the time
-this plugin's panel first drew its bars. `_bar_track_color()`'s
-`theme.current`-direct read is correct once that dict is actually populated;
-the bug was that nothing ever prompted a *second* draw once EDMC's theme
-did catch up — the only other trigger is a journal event, which has no
-relationship to theme-apply timing, so a bar drawn during that startup
-window was stuck showing its wrong guess indefinitely. `create_plugin_app`
-now schedules `_redraw_bars_only()` via `root.after()` at 500ms, 1.5s, 3s,
-and 6s after creation - each replays `_last_rows` (the most recent
-`set_inventory_levels()` call, cached at module level) through
-`_apply_inventory_levels()`, recolouring every bar from its last-known data
-without waiting for a fresh journal event. `_theme_update_deep(widget)`
-additionally recurses `theme.update()` through the panel's *entire* widget
-subtree at creation - confirmed from EDMC's actual `theme.py` source that
-its own `update()` only walks one level of `winfo_children()`, not deep
-enough for `_frame`'s frame→frame→row→label/canvas nesting - independently
-useful even though it wasn't the cause of this particular bug.
-`_bar_track_color()` still logs a bounded number of diagnostic lines
-(`theme.current=...`, resolved `base`, `used_fallback_label`) via the
-standard logger; kept in place in case a differently-timed environment
-still shows a gap the retries above don't cover. Bar/label
+**Status: known issue, not fully resolved** — see `TODO.md`'s Known Issues
+for the complete investigation history and next steps; this is a summary.
+A diagnostic log line (on a real Dark-theme install) captured `theme.current`
+still **empty** a full second after `plugin_start3` — EDMC hadn't finished
+applying its own theme by the time this plugin's panel first drew its bars.
+`_bar_track_color()`'s `theme.current`-direct read is correct once that dict
+is actually populated; the working theory was that nothing ever prompted a
+*second* draw once EDMC's theme did catch up — the only other trigger is a
+journal event, which has no relationship to theme-apply timing, so a bar
+drawn during that startup window would be stuck showing its wrong guess
+indefinitely. `create_plugin_app` schedules `_redraw_bars_only()` via
+`root.after()` at 500ms, 1.5s, 3s, and 6s after creation - each replays
+`_last_rows` (the most recent `set_inventory_levels()` call, cached at
+module level) through `_apply_inventory_levels()`, recolouring every bar
+from its last-known data without waiting for a fresh journal event. This
+was verified (via a test reproducing the exact captured failure) to
+self-correct *that* scenario — but the bug was still reported on a later
+session, so the retry-timing theory is not the complete explanation.
+`_theme_update_deep(widget)` additionally recurses `theme.update()` through
+the panel's *entire* widget subtree at creation - confirmed from EDMC's
+actual `theme.py` source that its own `update()` only walks one level of
+`winfo_children()`, not deep enough for `_frame`'s frame→frame→row→label/
+canvas nesting - independently correct regardless of whether it affects
+this particular bug. `_bar_track_color()` still logs a bounded number of
+diagnostic lines (`theme.current=...`, resolved `base`, `used_fallback_label`)
+via the standard logger, specifically so a future report can include real
+log output from the still-broken session for further investigation. Bar/label
 widths (`_BAR_NAME_WIDTH`, `_BAR_VALUE_WIDTH`, `_BAR_WIDTH`) are fixed
 regardless of label length or count magnitude, per this developer's standing
 rule that nothing in a `plugin_app` frame may let variable content widen

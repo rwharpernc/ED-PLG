@@ -5,7 +5,7 @@
 A lightweight [Elite Dangerous Market Connector](https://github.com/EDCD/EDMarketConnector) (EDMC) plugin for *Elite Dangerous: Odyssey*. ED-PLG tracks on-foot microresources — the components, items, and data you spend on suit and weapon upgrades — and tells you what you just looted, how much of it you now own, and whether you still have room to carry it. It also tracks your ship/SRV cargo hold ("payload"), so one panel covers everything you're carrying, on foot or in a vehicle.
 
 **Author:** CMDR Bocheaux  
-**Version:** 1.1.0  
+**Version:** 1.2.0  
 **License:** [MIT](LICENSE)
 
 ---
@@ -75,6 +75,7 @@ The final layout must look like this:
     ├── __init__.py
     ├── load.py
     ├── inventory.py
+    ├── cargo.py
     ├── suit.py
     ├── overlay.py
     ├── sound.py
@@ -303,8 +304,9 @@ Nearly all of these come from the same root cause: **the plugin can only know wh
 - Inventory tracking leans on EDMC's best-effort `BackPack` state; ED-PLG reconciles against it after every change, which corrects drift but inherits any gaps EDMC itself has.
 - **Rhino SRV cargo capacity is unknown** — brand new at the time of writing (2026-09-02), with no confirmed journal field for its fitted capacity. Its bar shows a current count with no `/capacity`, rather than a guessed number, until that's confirmed.
 - **SRV type is matched fuzzily** (a case-insensitive substring match against whatever the journal reports for `SRVType`/`SRVType_Localised`, since the exact raw values aren't documented) — the safe failure mode is an unrecognised SRV falling back to a generic "SRV Cargo" bar with no capacity, never a wrong number.
+- **Main-panel bar track colour may still be wrong under EDMC's Dark theme, on some installs.** The bars should render with a dark track (matching the panel background) behind their coloured outline/fill; on at least one real Dark-theme install, the track has stayed light despite several fix attempts (see `TODO.md`'s Known Issues for the full history and what to check next). Purely cosmetic — every bar's value, colour-coded outline, and click-to-open-inventory behaviour are unaffected; only the track's own background colour is in question.
 
-See [Design Specification — Known Limitations](docs/design-spec.md#11-known-limitations) for the detail.
+See [Design Specification — Known Limitations](docs/design-spec.md#11-known-limitations) for the detail, and `TODO.md` for anything still being actively tracked or researched.
 
 ## For Developers
 

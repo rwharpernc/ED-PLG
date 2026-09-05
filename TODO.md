@@ -11,28 +11,72 @@ to any version; pick items up as desired.
   capacity panel (bars via `send_shape`, off by default), and a best-effort
   ModernOverlay plugin-group registration (background panel + anchor,
   falling back to plain positioned lines wherever it's unavailable)
-  (`plugin/overlay.py`, `plugin/ui.py`, `plugin/load.py`). Shipped in 1.1.0
-  (unreleased); see follow-ups below.
+  (`plugin/overlay.py`, `plugin/ui.py`, `plugin/load.py`). Shipped in 1.2.0
+  (landed after 1.1.0 shipped); see follow-ups below.
 - [x] Import full microresource name table from FDevIDs at build time. A new
   `npm run update-names` script (`scripts/update-names.mjs`) fetches
   EDCD/FDevIDs' `microresources.csv` and regenerates
   `plugin/names_fdevids.py` (190 names) as a maintenance step separate from
   the ordinary build; `names.py`'s hand-curated table is now a small
-  override on top of it. Shipped in 1.1.0 (unreleased).
+  override on top of it. Shipped in 1.1.0.
 - [x] Configurable output format or notification sounds. Settings now has a
   **Pillage message** template field (`{item}`/`{total}` placeholders) and a
   **Play a sound on pickup** checkbox (Windows-only, via stdlib `winsound`;
-  `plugin/sound.py`, `plugin/ui.py`, `plugin/load.py`). Shipped in 1.1.0
-  (unreleased).
+  `plugin/sound.py`, `plugin/ui.py`, `plugin/load.py`). Shipped in 1.1.0.
 - [x] Preferences for filtering tracked categories and overlay position.
   Settings now has an Assets/Goods/Data checkbox row (muting a category's
   pillage notification without stopping tracking) and an overlay position
   X/Y field (`plugin/ui.py`, `plugin/overlay.py`, `plugin/load.py`). Shipped
-  in 1.1.0 (unreleased).
+  in 1.1.0.
 - [x] Search / filter box in the inventory window. A single filter box above
   the tabs (`plugin/window.py`) narrows the item listing on all three tabs to
   resources whose display name contains the typed text; category totals and
-  capacity bars stay unfiltered. Shipped in 1.1.0 (unreleased).
+  capacity bars stay unfiltered. Shipped in 1.1.0.
+
+## Known issues (research needed)
+
+- [ ] **Main-panel bar track colour still wrong under EDMC's Dark theme, on
+  at least one real install, despite four fix attempts.** Symptom: the
+  bar's track (the part behind the coloured outline/fill) renders light
+  instead of matching the panel's dark background — see README's Known
+  Limitations for the user-facing note. What's been tried, in order, each
+  disproven by the next real-environment test:
+  1. Branch on `theme.active == theme.THEME_DEFAULT` (mirroring EDMMM) —
+     silently always evaluated as "light".
+  2. Read a `tk.Frame`'s resolved `background` back — assumed
+     `theme.update()` recolours bare Frames; it doesn't (only Label/
+     Button/Canvas-shaped widgets are, per EDMC's actual `theme.py`).
+  3. Read a `tk.Label`'s resolved `background` back instead — assumed
+     EDMC's `theme.update()` had already recoloured that specific widget
+     by the time `_bar_track_color()` asked.
+  4. Read `theme.current['background']` directly (the dict EDMC's own
+     theming populates - correct in principle, confirmed from source) and
+     retry redrawing a few times via `root.after()` (0.5s/1.5s/3s/6s)
+     in case EDMC's `theme.apply()` hadn't run yet at panel-creation time.
+     A diagnostic log line (`_bar_track_color`, still present, bounded to
+     ~60 lines per session) confirmed `theme.current` genuinely was empty
+     a full second after `plugin_start3` on one real Dark-theme install,
+     and the retry mechanism was verified (via a test that reproduces the
+     exact failure) to self-correct *that specific* scenario — but the bug
+     was still reported after this fix shipped, on a different session.
+  - **Next steps for whoever picks this up**: get another
+    `Bar track colour diagnostic` log excerpt from the *still-broken*
+    session specifically (not just the first line - all of them, to see
+    whether `theme.current` ever populates, and whether the retries are
+    even firing) — Instructions → open
+    `%LOCALAPPDATA%\EDMarketConnector\logs\EDMarketConnector.log`,
+    search for `Bar track colour diagnostic`. Also worth checking: does
+    the *inventory window's* `ttk.Progressbar` (a completely different
+    widget/mechanism, `window.py`) render correctly under the same Dark
+    theme, on the same install? If it does, the bug is specific to this
+    panel's Canvas approach or its timing; if it doesn't either, the
+    problem may be somewhere upstream (EDMC version quirk, a different
+    theme variant, a second monitor/DPI scaling interaction, etc.) rather
+    than anything in `_bar_track_color()`'s logic at all.
+  - Deliberately left in its current (partially-mitigated, not fully
+    fixed) state rather than continuing to guess — see commit history on
+    `plugin/ui.py`'s `_bar_track_color`/`_redraw_bars_only` for the full
+    account of what's been tried.
 
 ## Overlay follow-ups (not yet done)
 
@@ -73,5 +117,25 @@ to any version; pick items up as desired.
 
 ## Accepted limitations (not actionable)
 
+Kept in sync with README's Known Limitations section — anything listed there
+that isn't tracked as an actionable item elsewhere in this file belongs here
+too.
+
 - Fleet carrier CAPI lag (15–30 min, throttled by EDMC)
 - Consumable count drift from journal events with no coverage (e.g. grenade throws)
+- Backpack capacity is not journal-reported; hardcoded unengineered defaults
+  in `suit.py` can't reflect *Extra Backpack Capacity*'s engineering grade or
+  the Flight Suit (no known default at all) — mitigated via per-loadout
+  Settings overrides (see the Fixable-gaps entry above), not fixable at the
+  source.
+- Inventory tracking leans on EDMC's best-effort `BackPack` state; ED-PLG
+  reconciles against it after every change, which corrects drift but
+  inherits any gaps EDMC itself has.
+- Rhino SRV cargo capacity is unconfirmed (brand new as of 2026-09-02, no
+  documented journal field yet for its actual fitted capacity) — shows a
+  count with no `/capacity` until that's confirmed against a real journal
+  entry; see design-spec §11.
+- SRV type matching (`cargo.py`) is a fuzzy case-insensitive substring
+  search against undocumented raw journal values, by design — the safe
+  failure mode for an unrecognised SRV is a generic label with unknown
+  capacity, never a wrong number.
