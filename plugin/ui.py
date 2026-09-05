@@ -33,10 +33,13 @@ CONFIG_MESSAGE_FORMAT = "edplg_message_format"
 CONFIG_PANEL_COLLAPSED = "edplg_panel_collapsed"
 
 # Main-panel section title, echoed in the collapsible header (see
-# _update_header_text) - spelled-out name + abbreviation in parens, the same
-# title-line convention as this developer's other EDMC plugins (e.g. EDMMM's
-# "My Mission Manager (EDMMM)").
-PANEL_TITLE = "Pillage Ledger & Gear-tracker (ED-PLG)"
+# _update_header_text) - spelled-out brand name + abbreviation in parens, the
+# same title-line convention as this developer's other EDMC plugins (e.g.
+# EDMMM's "My Mission Manager (EDMMM)"). "ED-PLG" is the technical name
+# (plugin folder, config key prefix, log namespace - see plugin_name below
+# and load.py's plugin_start3 return value) and is unaffected by this brand
+# name; only user-facing display text uses the new one.
+PANEL_TITLE = "ED Pillage & Payload (ED-PLG)"
 
 # Fixed order of the main-panel inventory bars. "fleet_carrier_locker" and
 # "cargo" are conditional - see set_inventory_levels - and grid_remove()'d
@@ -196,10 +199,10 @@ def create_plugin_app(
     theme.update(_frame)
 
     # Bars were first drawn (in _build_bars) before theme.update() had a
-    # chance to colour _frame - _bar_track_color() reads _frame's *current*
-    # background, so redraw now that it actually reflects the real theme,
-    # rather than leaving the initial paint stuck on the pre-theme guess
-    # until the first journal event calls set_inventory_levels().
+    # chance to colour _status_label - _bar_track_color() reads that label's
+    # *current* background, so redraw now that it actually reflects the real
+    # theme, rather than leaving the initial paint stuck on the pre-theme
+    # guess until the first journal event calls set_inventory_levels().
     for key, widgets in _bar_rows.items():
         _draw_bar(widgets["bar"], 0, None, BAR_COLOURS.get(key, _BAR_DEFAULT_COLOUR))
 
@@ -222,20 +225,23 @@ def _bar_track_color() -> str:
     so the track works correctly under Default, Dark, and Transparent alike
     without needing to detect *which* theme is active.
 
-    Deliberately reads the live, already-`theme.update()`-coloured `_frame`
-    background rather than comparing `theme.active` against a `theme.
-    THEME_DEFAULT` enum value (the approach this plugin's bars used at
-    first): that comparison silently degraded to "always light" in practice
-    - the reported white bars under Dark - and reading back a widget's own
-    resolved colour can't be wrong the way guessing at an internal theme
-    constant can.
+    Reads a Label's resolved background rather than a plain Frame's: EDMC's
+    theme.update() recolors Label/Button-type widgets, but a bare Frame is
+    just invisible layout scaffolding that's never actually recoloured -
+    it only ever reads as "dark" because its children fully cover it, not
+    because its own -background was ever touched. An earlier version read
+    _frame's background on that mistaken assumption, which meant it was
+    really just reading Tk's untouched default (always light) regardless of
+    the active theme - producing the reported white bars under Dark, on top
+    of the enum-comparison approach that failed the same way before it.
     """
-    if _frame is None:
+    reference = _status_label or _title_label
+    if reference is None:
         return _BAR_TRACK_LIGHT
 
     try:
-        base = _frame.cget("background")
-        red16, green16, blue16 = _frame.winfo_rgb(base)
+        base = reference.cget("background")
+        red16, green16, blue16 = reference.winfo_rgb(base)
     except tk.TclError:
         return _BAR_TRACK_LIGHT
 

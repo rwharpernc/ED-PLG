@@ -6,10 +6,11 @@
 
 ## 1. Purpose
 
-ED-PLG (Elite Dangerous Pillage Ledger & Gear-tracker) is a lightweight
+ED-PLG (ED Pillage & Payload) is a lightweight
 [Elite Dangerous Market Connector](https://github.com/EDCD/EDMarketConnector)
 plugin for *Elite Dangerous: Odyssey* commanders who raid settlements, loot
-containers, and download data while on foot.
+containers, and download data while on foot - and, since the cargo-tracking
+scope extension (§12), keep an eye on ship/SRV cargo capacity too.
 
 The plugin answers two questions:
 
@@ -81,7 +82,7 @@ plugin lineup):
 
 | Element | Content |
 |---------|---------|
-| Title | `▾ Pillage Ledger & Gear-tracker (ED-PLG)` — nothing else shares this line (arrow flips to `▸` when collapsed) — click anywhere on the row to toggle. Spelled-out-name-plus-abbreviation, with no trailing status or punctuation, matching the title-line convention used across this developer's other EDMC plugins (e.g. EDMMM's bare "My Mission Manager (EDMMM)"). |
+| Title | `▾ ED Pillage & Payload (ED-PLG)` — nothing else shares this line (arrow flips to `▸` when collapsed) — click anywhere on the row to toggle. Spelled-out-name-plus-abbreviation, with no trailing status or punctuation, matching the title-line convention used across this developer's other EDMC plugins (e.g. EDMMM's bare "My Mission Manager (EDMMM)"). |
 
 Everything below the header collapses/expands together:
 

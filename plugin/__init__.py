@@ -1,3 +1,3 @@
-"""ED-PLG: Elite Dangerous Pillage Ledger & Gear-tracker."""
+"""ED-PLG: ED Pillage & Payload."""
 
 __version__ = "1.1.0"

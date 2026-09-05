@@ -10,9 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Collapsible main panel with at-a-glance inventory bars.** The panel
-  title is now a click-to-collapse header holding *only* the spelled-out name
-  plus abbreviation (`▾ Pillage Ledger & Gear-tracker (ED-PLG)`, nothing else
-  on that line — matching the title-line convention used across this
+  title is now a click-to-collapse header holding *only* the spelled-out
+  brand name plus abbreviation (`▾ ED Pillage & Payload (ED-PLG)`, nothing
+  else on that line — matching the title-line convention used across this
   developer's other EDMC plugins), collapsing everything else down to that
   one line and remembering the choice across restarts. The live status line
   moved below the title, as the first line of the collapsible content.
@@ -22,11 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   — clicking any bar opens the inventory window, replacing the old
   **Inventory** button. Bars are drawn on a plain `tk.Canvas` rather than
   `ttk.Progressbar`, after the latter rendered as an oversized, unthemed
-  white box under EDMC's theming. The bar track colour is derived from the
-  panel's own live background rather than a theme-name check, so it now
-  correctly renders dark under EDMC's Dark theme instead of staying
-  light-gray/white (the theme-name check silently always evaluated as
-  "light" in practice).
+  white box under EDMC's theming. The bar track colour is derived from a
+  Label's own live, theme-coloured background, so it correctly renders dark
+  under EDMC's Dark theme (a bare Frame's background is never actually
+  recoloured by EDMC's theming, so reading from one - the first fix attempt
+  - still produced light/white bars under Dark).
 - **Ship & SRV cargo-hold tracking (scope extension).** A new `cargo.py`
   module tracks which vehicle (ship, on foot, or SRV) the commander
   currently occupies from `Embark`/`Disembark`/`LaunchSRV`/`DockSRV` journal
@@ -39,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Rebranded to "ED Pillage & Payload"**, reflecting the cargo-tracking
+  scope extension above — "Pillage Ledger & Gear-tracker" undersold a plugin
+  that now also tracks ship/SRV cargo capacity. Display text only (main
+  panel title, README, docs): the plugin folder (`EDPLG`), config key prefix
+  (`edplg_*`), log namespace, and `plugin_start3`'s return value are
+  unchanged and stay `ED-PLG`/`EDPLG`.
 - README/design-spec/tech-spec's "out of scope" wording narrowed from
   "commodity cargo" to "commodity identity, prices, and market data", to
   make room for the tonnage-only tracking above without re-opening the door

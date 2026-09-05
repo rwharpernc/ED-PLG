@@ -14,6 +14,7 @@ delivered through `journal_entry()`.
 |----------|-------|
 | Plugin folder name | `EDPLG` (must match for EDMC logging) |
 | Internal display name | `ED-PLG` (returned from `plugin_start3`) |
+| Brand name | `ED Pillage & Payload` — main-panel title only (`ui.PANEL_TITLE`); every technical identifier above stays `ED-PLG`/`EDPLG` |
 | Language | Python 3.9+ (bundled with EDMC) |
 | UI framework | Tkinter (via EDMC main window) |
 | Build output | `dist/EDPLG/` |
@@ -512,9 +513,12 @@ set_update_applied(version: str) -> None
 visible, click anywhere to toggle collapse) and a content frame (status line,
 bars, last-event line, version line) that's `grid_remove()`d entirely while
 collapsed — `edplg_panel_collapsed` persists the choice. `PANEL_TITLE` is the
-spelled-out name plus abbreviation (`"Pillage Ledger & Gear-tracker
+brand name plus its technical abbreviation (`"ED Pillage & Payload
 (ED-PLG)"`), matching the title-line convention this developer uses across
-their other EDMC plugins; `_update_header_text()` renders it bare
+their other EDMC plugins - "ED-PLG" itself is unaffected by the brand and
+stays the folder name, config key prefix (`edplg_*`), and `plugin_start3`
+return value (see §1); only this display string changed.
+`_update_header_text()` renders it bare
 (`f"{arrow} {PANEL_TITLE}"`, no trailing colon or status) since nothing else
 shares that line. The live status label moved from the header into the
 content frame's first row (grid row 0, ahead of the bars at row 1) for the
