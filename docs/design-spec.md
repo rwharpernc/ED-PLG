@@ -114,7 +114,11 @@ follow EDMC's `theme.update()` walk the way plain tk widgets do, which
 produced a visibly broken (oversized, unthemed white) bar in practice. A
 Canvas's own explicit background plus rectangles that fully cover it look
 correct under any theme regardless of that gap — the same approach this
-developer's other plugins (e.g. EDMMM) already use for their own bars.
+developer's other plugins (e.g. EDMMM) already use for their own bars. The
+track colour itself comes from EDMC's own `theme.current['background']`
+value (see Technical Specification §6.6) rather than being inferred from any
+of this plugin's own widgets, so it's correct under Dark theme regardless of
+exactly when EDMC has gotten around to recolouring any particular widget.
 
 Every row-level container (the title header, the bars container, each bar
 row) is sized to its own content (`sticky="w"`, never `"ew"`) rather than
@@ -224,12 +228,19 @@ Opened by clicking any bar on the main panel (§3.2); a non-modal `Toplevel`
 that can stay open during play and refreshes live on every inventory-changing
 journal event.
 
-One tab per storage location — **Backpack**, **Ship Locker**, **Carrier Locker** —
-each showing:
+One tab per storage location — **Backpack**, **Ship Locker**, **Carrier
+Locker** — each showing:
 
 1. A heading naming the worn suit and its Extra Backpack Capacity status.
 2. A total and capacity bar per category (Assets, Goods, Data).
 3. Every resource held, with its count, sorted by category then descending count.
+
+The Carrier Locker tab is hidden (not just empty) until a fleet carrier is
+actually confirmed for this commander - the same
+`InventoryTracker.fleet_carrier_callsign` gate the main panel's Carrier
+Locker bar uses (§3.2) - and reappears or hides again live if that changes
+while the window stays open (carrier data arriving, or `CarrierDecommission`
+clearing it).
 
 A single **Filter** box above the tabs narrows the item listing (all three
 tabs) to resources whose display name contains the typed text

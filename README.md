@@ -125,9 +125,9 @@ Click any bar on the ED-PLG panel:
 |-----|----------|
 | Backpack | What you are carrying, against your suit's capacity |
 | Ship Locker | What is stowed in the ship (1000 per category) |
-| Carrier Locker | Fleet carrier locker from CAPI, when available |
+| Carrier Locker | Fleet carrier locker from CAPI — only shown once ED-PLG has confirmed you own a fleet carrier, same as the main panel's bar |
 
-Each tab shows a total and capacity bar for **Assets**, **Goods**, and **Data**, then every resource you hold and its count. It updates live as you loot and can stay open while you play.
+Each tab shows a total and capacity bar for **Assets**, **Goods**, and **Data**, then every resource you hold and its count. It updates live as you loot and can stay open while you play — including the Carrier Locker tab appearing or disappearing live if your carrier status changes mid-session.
 
 The **Filter** box above the tabs narrows the item listing on all three tabs to resources whose name contains what you type (case-insensitive) — the category totals and capacity bars stay unfiltered so you can still see the full picture while hunting for one resource. Clear it, or click **Clear**, to see everything again.
 

@@ -225,23 +225,42 @@ def _bar_track_color() -> str:
     so the track works correctly under Default, Dark, and Transparent alike
     without needing to detect *which* theme is active.
 
-    Reads a Label's resolved background rather than a plain Frame's: EDMC's
-    theme.update() recolors Label/Button-type widgets, but a bare Frame is
-    just invisible layout scaffolding that's never actually recoloured -
-    it only ever reads as "dark" because its children fully cover it, not
-    because its own -background was ever touched. An earlier version read
-    _frame's background on that mistaken assumption, which meant it was
-    really just reading Tk's untouched default (always light) regardless of
-    the active theme - producing the reported white bars under Dark, on top
-    of the enum-comparison approach that failed the same way before it.
+    Reads EDMC's own theme.current['background'] first - the exact value its
+    theme.update()/_update_widget() assigns to every recoloured widget's
+    background option (confirmed from EDMC's actual theme.py: 'grey4' for
+    Dark/Transparent) - rather than inferring it by reading a widget back.
+    Two earlier attempts did that: first a Frame's background (never
+    actually touched by theme.update() - only Label/Button/Canvas are, a
+    Frame just looks themed because its children cover it), then a Label's
+    (which depends on EDMC's theme.apply() having already run against it by
+    the moment we happen to read it, and in practice still read stale/
+    default under Dark theme in the field, cause unconfirmed). Going to the
+    dict directly removes that timing dependency; falling back to a Label's
+    background only if theme.current isn't populated yet (e.g. reading it
+    before EDMC's own theme.apply() has ever run at all).
     """
+    base = None
+    try:
+        base = theme.current.get("background")
+    except AttributeError:
+        base = None
+
     reference = _status_label or _title_label
-    if reference is None:
+    if not base and reference is not None:
+        try:
+            base = reference.cget("background")
+        except tk.TclError:
+            base = None
+
+    # Any live widget can resolve a colour spec via winfo_rgb() - it's just a
+    # Tcl interpreter handle here, its own background is irrelevant to this
+    # call - so _frame works even when there's no Label to read from yet.
+    resolver = reference or _frame
+    if not base or resolver is None:
         return _BAR_TRACK_LIGHT
 
     try:
-        base = reference.cget("background")
-        red16, green16, blue16 = reference.winfo_rgb(base)
+        red16, green16, blue16 = resolver.winfo_rgb(base)
     except tk.TclError:
         return _BAR_TRACK_LIGHT
 

@@ -214,14 +214,17 @@ class InventoryWindow:
         filter_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Button(filter_bar, text="Clear", command=self._clear_filter).pack(side=tk.LEFT, padx=(6, 0))
 
-        notebook = ttk.Notebook(container, style=STYLE_NOTEBOOK)
-        notebook.pack(fill=tk.BOTH, expand=True, padx=10)
+        self._notebook = ttk.Notebook(container, style=STYLE_NOTEBOOK)
+        self._notebook.pack(fill=tk.BOTH, expand=True, padx=10)
 
         self._tabs: Dict[str, _LocationTab] = {}
+        self._tab_labels: Dict[str, str] = {}
+        self._carrier_tab_shown = True
         for key, tab_label, tab_heading in TABS:
-            tab = _LocationTab(notebook, tab_heading, row_height)
-            notebook.add(tab.frame, text=tab_label)
+            tab = _LocationTab(self._notebook, tab_heading, row_height)
+            self._notebook.add(tab.frame, text=tab_label)
             self._tabs[key] = tab
+            self._tab_labels[key] = tab_label
 
         buttons = ttk.Frame(container)
         buttons.pack(fill=tk.X, padx=10, pady=10)
@@ -272,6 +275,28 @@ class InventoryWindow:
 
         for key, tab in self._tabs.items():
             tab.update(snapshot.get(key, {}), capacities[key], note=notes[key], filter_text=filter_text)
+
+        self._update_carrier_tab_visibility()
+
+    def _update_carrier_tab_visibility(self) -> None:
+        """
+        Show the Carrier Locker tab only once a fleet carrier is actually
+        confirmed for this commander (fleet_carrier_callsign only ever gets
+        set from real CAPI locker data - see InventoryTracker.
+        apply_fleet_carrier_locker) - same gating as the main panel's
+        Carrier Locker bar, so a commander with no carrier never sees a tab
+        for one here either.
+        """
+        has_carrier = bool(self._tracker.fleet_carrier_callsign)
+        if has_carrier == self._carrier_tab_shown:
+            return
+
+        tab_frame = self._tabs["fleet_carrier_locker"].frame
+        if has_carrier:
+            self._notebook.add(tab_frame, text=self._tab_labels["fleet_carrier_locker"])
+        else:
+            self._notebook.hide(tab_frame)
+        self._carrier_tab_shown = has_carrier
 
     def _clear_filter(self) -> None:
         self._filter_var.set("")

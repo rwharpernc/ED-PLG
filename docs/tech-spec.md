@@ -411,6 +411,20 @@ per-window (not persisted) and applies across all three tabs simultaneously.
 minimum (keeping its position), so an upgrade cannot strand the user with a window
 smaller than the current layout needs.
 
+**Carrier Locker tab visibility.** `InventoryWindow._update_carrier_tab_visibility()`,
+called at the end of every `refresh()`, hides the Carrier Locker pane via
+`ttk.Notebook.hide(tab_frame)` unless `tracker.fleet_carrier_callsign` is set —
+the same gate `load.py`'s `_refresh_panel_bars` uses for the main panel's
+Carrier Locker bar (§6.7) — and restores it via `notebook.add(tab_frame,
+text=...)` once it is (per Tcl/Tk's `ttk::notebook add`, re-adding a
+window already managed but hidden restores it to its *original* tab
+position rather than appending it at the end). `self._carrier_tab_shown`
+short-circuits the common case (no change since the last refresh) so this
+never calls `hide`/`add` redundantly on every single refresh. The tab
+frame and its `_LocationTab` are always created and kept live either way —
+only the notebook's *display* of that pane is toggled — so it needs no
+special handling anywhere else in `refresh()`.
+
 **Styling.** `_configure_styles()` registers `EDPLG.`-prefixed ttk styles so EDMC's
 own widgets are untouched. `ttk.Treeview` uses a fixed default row height regardless
 of font, which collides under EDMC's theme, so `rowheight` is computed from
@@ -558,20 +572,32 @@ chrome doesn't reliably follow EDMC's `theme.update()` walk the way plain
 `tk` widgets do, whereas a canvas's own explicit background plus
 fully-covering rectangles look correct regardless.
 
-`_bar_track_color()` derives the track colour from `_frame`'s own live,
-already-`theme.update()`-coloured background - reading it back via
-`winfo_rgb()` and shifting it a fixed amount toward black or white depending
-on its luminance (same technique `window.py`'s `_stripe_colour()` uses for
-its Treeview row shading) - rather than branching on `theme.active ==
-theme.THEME_DEFAULT`. An earlier version used that enum comparison directly
-(matching EDMMM's own approach) but it silently evaluated as "always light"
-in practice, which is what produced light-gray/white bars under EDMC's Dark
-theme; reading a widget's own resolved colour back can't be wrong the way
-guessing at an internal theme constant can. Because bars are first drawn in
-`_build_bars()` before `theme.update(_frame)` has run, `create_plugin_app`
-redraws every bar once more immediately after that call, so the very first
-paint already reflects the real background rather than the pre-theme
-default. Bar/label
+`_bar_track_color()` reads `theme.current['background']` directly - the exact
+dict key EDMC's own `theme.py` assigns to every widget it recolours
+(`'grey4'` for Dark/Transparent, confirmed from EDMC's source), shifting it a
+fixed amount toward black or white by luminance for the track shade (same
+derivation `window.py`'s `_stripe_colour()` uses for its Treeview row
+shading, applied to an authoritative value instead of one read back from a
+widget). It falls back to reading a Label's own `background` only if
+`theme.current` is empty (not yet populated - EDMC only fills it once its
+own `theme.apply()` has run at least once), and finally to a static default
+if even that fails.
+
+This landed after two earlier attempts that both looked reasonable but
+proved wrong in the field: branching on `theme.active == theme.THEME_DEFAULT`
+(matching EDMMM's own approach) silently evaluated as "always light" in this
+environment; reading a Frame's background next assumed `theme.update()`
+recolours bare Frames the way it does Labels, but EDMC's real
+`_update_widget()` only ever sets a Frame's background as a side effect of
+matching `'background' in widget.keys()` - which *is* true for a Frame, but
+timing-sensitive in a way a Label's `'activeforeground' in widget.keys()`
+branch isn't. Reading `theme.current` directly removes the dependency on
+any of our own widgets having already been recoloured by the time we ask.
+
+Because bars are first drawn in `_build_bars()` before `theme.update(_frame)`
+has run, `create_plugin_app` redraws every bar once more immediately after
+that call, so the very first paint already reflects the real background
+rather than the pre-theme default. Bar/label
 widths (`_BAR_NAME_WIDTH`, `_BAR_VALUE_WIDTH`, `_BAR_WIDTH`) are fixed
 regardless of label length or count magnitude, per this developer's standing
 rule that nothing in a `plugin_app` frame may let variable content widen

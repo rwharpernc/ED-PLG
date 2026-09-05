@@ -22,11 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   — clicking any bar opens the inventory window, replacing the old
   **Inventory** button. Bars are drawn on a plain `tk.Canvas` rather than
   `ttk.Progressbar`, after the latter rendered as an oversized, unthemed
-  white box under EDMC's theming. The bar track colour is derived from a
-  Label's own live, theme-coloured background, so it correctly renders dark
-  under EDMC's Dark theme (a bare Frame's background is never actually
-  recoloured by EDMC's theming, so reading from one - the first fix attempt
-  - still produced light/white bars under Dark).
+  white box under EDMC's theming. The bar track colour reads EDMC's own
+  `theme.current['background']` directly, so it correctly renders dark
+  under Dark theme regardless of whether any of this plugin's own widgets
+  have been recoloured yet (two earlier attempts inferred the colour from
+  one of this plugin's own widgets instead, and both still showed
+  light/white bars under Dark in practice).
 - **Ship & SRV cargo-hold tracking (scope extension).** A new `cargo.py`
   module tracks which vehicle (ship, on foot, or SRV) the commander
   currently occupies from `Embark`/`Disembark`/`LaunchSRV`/`DockSRV` journal
@@ -36,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Limitations) while in one, and hidden entirely on foot with no vehicle.
   This is tonnage only — commodity identity, prices, and market data remain
   out of scope; see README's Scope section and design-spec §2/§12.
+- **Carrier Locker tab hidden without a confirmed carrier.** The inventory
+  window's Carrier Locker tab is now hidden entirely — not just shown
+  empty — until ED-PLG has confirmed the commander actually owns a fleet
+  carrier, same gate as the main panel's Carrier Locker bar. Appears or
+  disappears live if that changes while the window stays open (e.g. CAPI
+  data arriving, or `CarrierDecommission`).
 
 ### Changed
 
