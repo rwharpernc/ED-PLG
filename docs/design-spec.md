@@ -130,7 +130,9 @@ white box trailing the title line before the fix.
 ### 3.3 Log output
 
 All pillage events are written at `INFO` level through Python's `logging` module.
-Logs appear in `%TEMP%\EDMarketConnector.log` alongside core EDMC output.
+Logs appear in `%LOCALAPPDATA%\EDMarketConnector\logs\EDMarketConnector.log`
+alongside core EDMC output (confirmed on EDMC 5.6.0 — older versions may
+have used `%TEMP%\EDMarketConnector.log` instead).
 
 ### 3.4 In-game overlay
 

@@ -197,7 +197,7 @@ If you turn it on for a copy you're actively hand-editing (developing, not just 
 
 ## Troubleshooting
 
-The EDMC log is at `%TEMP%\EDMarketConnector.log` on Windows; search it for `EDPLG`. Python import and syntax errors surface there.
+The EDMC log is at `%LOCALAPPDATA%\EDMarketConnector\logs\EDMarketConnector.log` on Windows (confirmed on EDMC 5.6.0 — older versions may have used `%TEMP%\EDMarketConnector.log` instead, so check there too if the newer path doesn't exist); search it for `EDPLG`. Python import and syntax errors surface there.
 
 - **Plugin not listed / no panel** — Check the folder is named exactly `EDPLG` with the `.py` files directly inside (see the layout above), then restart EDMC.
 - **Listed as disabled** — A folder name ending in `.disabled` is skipped by EDMC. Remove the suffix and restart.

@@ -109,7 +109,9 @@ logger = logging.getLogger(f"{appname}.{plugin_name}")
 - Pillage events: `logger.info(...)`.
 - Baseline sync: `logger.info(...)` / `logger.debug(...)`.
 
-Log destination: `%TEMP%\EDMarketConnector.log` (Windows).
+Log destination: `%LOCALAPPDATA%\EDMarketConnector\logs\EDMarketConnector.log`
+(Windows, confirmed on EDMC 5.6.0 — older versions may have used
+`%TEMP%\EDMarketConnector.log` instead).
 
 ## 5. Journal Events
 
@@ -951,7 +953,7 @@ Manual verification steps for releases:
     does not repeat on further syncs while still over threshold. Offload
     below 900, then refill past it; confirm it warns again.
 11. Disable the overlay in settings; confirm no further overlay lines are drawn.
-12. Verify log entries in `%TEMP%\EDMarketConnector.log`.
+12. Verify log entries in `%LOCALAPPDATA%\EDMarketConnector\logs\EDMarketConnector.log`.
 13. In the Inventory window, type into the **Filter** box; confirm only matching
     rows remain on all three tabs while totals/bars stay unchanged, and **Clear**
     restores the full list.
