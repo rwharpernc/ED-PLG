@@ -61,8 +61,19 @@ _BAR_VALUE_WIDTH = 13
 _BAR_WIDTH = 80
 _BAR_HEIGHT = 8
 
-_BAR_FILL_COLOUR = "#4fc3f7"
+# Each bar gets its own signature colour rather than one flat fill for all
+# four - Backpack/Ship Locker/Carrier Locker echo the category colours
+# already used elsewhere in this plugin's overlay output (see
+# overlay.CATEGORY_COLOURS), and Cargo gets the Elite accent orange since
+# it's a ship/SRV concept rather than an on-foot microresource one.
+BAR_COLOURS: Dict[str, str] = {
+    "backpack": "#4fc3f7",
+    "ship_locker": "#81c784",
+    "fleet_carrier_locker": "#ba68c8",
+    "cargo": "#ff8c0d",
+}
 _BAR_FULL_COLOUR = "#c0392b"
+_BAR_DEFAULT_COLOUR = "#9e9e9e"
 _BAR_TRACK_LIGHT = "#c0c4c7"
 _BAR_TRACK_DARK = "#3c4043"
 
@@ -127,11 +138,12 @@ def create_plugin_app(
     """
     Create the main-window frame for EDMC.
 
-    Structure: a header row (title + live status) that's always visible and
-    doubles as the collapse toggle - the same click-to-collapse treatment
-    EDMMM uses for its own panel - followed by a content frame (inventory
-    bars, last pickup, the one-time "Updated to vX" line) that's hidden
-    entirely while collapsed, leaving only the header showing.
+    Structure: a header row holding *only* the plugin title, always visible
+    and doubling as the collapse toggle - the same click-to-collapse
+    treatment, and the same bare-title-line content, as EDMMM's own panel -
+    followed by a content frame (live status, inventory bars, last pickup,
+    the one-time "Updated to vX" line) that's hidden entirely while
+    collapsed, leaving only the title line showing.
     """
     global _frame, _title_label, _status_label, _content_frame
     global _last_event_label, _version_label, _on_show_inventory, _panel_collapsed
@@ -142,33 +154,37 @@ def create_plugin_app(
     _frame = tk.Frame(parent)
     _frame.columnconfigure(0, weight=1)
 
+    # sticky="w" (not "ew") everywhere below: a frame stretched wider than its
+    # own children exposes its own background, which doesn't reliably follow
+    # EDMC's theme.update() the way its Label/Frame children's own colors do
+    # - this showed up in practice as a stray white box trailing the title.
+    # Sizing every container to its natural content width sidesteps that
+    # regardless of the exact cause.
     header = tk.Frame(_frame, cursor="hand2")
-    header.grid(row=0, column=0, sticky=tk.EW)
+    header.grid(row=0, column=0, sticky=tk.W)
     header.bind("<Button-1>", lambda _e: _toggle_collapsed())
 
     _title_label = tk.Label(header, font=_bold_font(header), cursor="hand2")
     _title_label.pack(side=tk.LEFT)
     _title_label.bind("<Button-1>", lambda _e: _toggle_collapsed())
 
-    _status_label = tk.Label(header, text="Awaiting Odyssey loot…", cursor="hand2")
-    _status_label.pack(side=tk.LEFT, padx=(4, 0))
-    _status_label.bind("<Button-1>", lambda _e: _toggle_collapsed())
-
     _content_frame = tk.Frame(_frame)
-    _content_frame.grid(row=1, column=0, sticky=tk.EW)
-    _content_frame.columnconfigure(0, weight=1)
+    _content_frame.grid(row=1, column=0, sticky=tk.W)
+
+    _status_label = tk.Label(_content_frame, text="Awaiting Odyssey loot…", anchor=tk.W)
+    _status_label.grid(row=0, column=0, sticky=tk.W)
 
     _build_bars(_content_frame)
 
     _last_event_label = tk.Label(_content_frame, text="", wraplength=420, justify=tk.LEFT)
-    _last_event_label.grid(row=1, column=0, sticky=tk.W, pady=(2, 0))
+    _last_event_label.grid(row=2, column=0, sticky=tk.W, pady=(2, 0))
 
     # The plugin version itself lives only in the Settings tab (see
     # create_prefs) - this row is reserved purely for the one-time
     # "Updated to vX" confirmation right after a staged update takes
     # effect (see _apply_version_state), so it starts hidden.
     _version_label = HyperlinkLabel(_content_frame, text="", url=RELEASES_PAGE_URL, underline=True)
-    _version_label.grid(row=2, column=0, sticky=tk.W, pady=(2, 0))
+    _version_label.grid(row=3, column=0, sticky=tk.W, pady=(2, 0))
     _version_label.grid_remove()
     _apply_version_state()
 
@@ -202,14 +218,21 @@ def _bar_track_color() -> str:
     return _BAR_TRACK_DARK if _is_dark_theme() else _BAR_TRACK_LIGHT
 
 
-def _draw_bar(canvas: tk.Canvas, total: int, capacity: Optional[int]) -> None:
-    """(Re)draw one bar's track + fill rectangles, fully covering the canvas
-    so nothing of the canvas's own background - or anything behind it - is
-    ever visible, regardless of the active theme."""
+def _draw_bar(canvas: tk.Canvas, total: int, capacity: Optional[int], colour: str) -> None:
+    """
+    (Re)draw one bar's track + fill rectangles, fully covering the canvas so
+    nothing of the canvas's own background - or anything behind it - is ever
+    visible, regardless of the active theme.
+
+    `colour` is this bar's own signature colour (see BAR_COLOURS) - drawn as
+    the track's outline even at 0% so every bar reads as distinctly "its own
+    colour" rather than a flat gray box, and as the fill colour once there's
+    something to show (overridden to red once at capacity).
+    """
     canvas.delete("all")
     track = _bar_track_color()
     canvas.configure(background=track)
-    canvas.create_rectangle(0, 0, _BAR_WIDTH, _BAR_HEIGHT, fill=track, outline="")
+    canvas.create_rectangle(0, 0, _BAR_WIDTH - 1, _BAR_HEIGHT - 1, fill=track, outline=colour)
 
     if not capacity:
         return
@@ -218,8 +241,8 @@ def _draw_bar(canvas: tk.Canvas, total: int, capacity: Optional[int]) -> None:
     if fraction <= 0:
         return
 
-    colour = _BAR_FULL_COLOUR if total >= capacity else _BAR_FILL_COLOUR
-    canvas.create_rectangle(0, 0, max(1, round(_BAR_WIDTH * fraction)), _BAR_HEIGHT, fill=colour, outline="")
+    fill_colour = _BAR_FULL_COLOUR if total >= capacity else colour
+    canvas.create_rectangle(0, 0, max(1, round(_BAR_WIDTH * fraction)), _BAR_HEIGHT, fill=fill_colour, outline="")
 
 
 def _build_bars(parent: tk.Frame) -> None:
@@ -238,7 +261,7 @@ def _build_bars(parent: tk.Frame) -> None:
     global _bar_rows
 
     bars = tk.Frame(parent)
-    bars.grid(row=0, column=0, sticky=tk.W, pady=(0, 2))
+    bars.grid(row=1, column=0, sticky=tk.W, pady=(2, 2))
     _bar_rows = {}
 
     for grid_row, key in enumerate(BAR_ORDER):
@@ -261,7 +284,7 @@ def _build_bars(parent: tk.Frame) -> None:
             widget.bind("<Button-1>", _open_inventory)
 
         _bar_rows[key] = {"row": row, "name": name_label, "bar": bar, "value": value_label}
-        _draw_bar(bar, 0, None)
+        _draw_bar(bar, 0, None, BAR_COLOURS.get(key, _BAR_DEFAULT_COLOUR))
 
 
 def _open_inventory(_event=None) -> None:
@@ -297,7 +320,7 @@ def set_inventory_levels(rows: List[BarRow]) -> None:
         label, total, capacity = data
         widgets["name"]["text"] = label
         widgets["value"]["text"] = f"{total}/{capacity}" if capacity else str(total)
-        _draw_bar(widgets["bar"], total, capacity)
+        _draw_bar(widgets["bar"], total, capacity, BAR_COLOURS.get(key, _BAR_DEFAULT_COLOUR))
         row.grid()
 
 
@@ -305,7 +328,7 @@ def _update_header_text() -> None:
     if _title_label is None:
         return
     arrow = "▸" if _panel_collapsed else "▾"
-    _title_label["text"] = f"{arrow} {PANEL_TITLE}:"
+    _title_label["text"] = f"{arrow} {PANEL_TITLE}"
 
 
 def _toggle_collapsed() -> None:

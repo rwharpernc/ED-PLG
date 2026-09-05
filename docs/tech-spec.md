@@ -508,13 +508,24 @@ set_update_downloaded(version: str) -> None
 set_update_applied(version: str) -> None
 ```
 
-`create_plugin_app` builds a header row (title + status, always visible, click
-anywhere to toggle collapse) and a content frame (the bars, last-event line,
-version line) that's `grid_remove()`d entirely while collapsed —
-`edplg_panel_collapsed` persists the choice. `PANEL_TITLE` is the spelled-out
-name plus abbreviation (`"Pillage Ledger & Gear-tracker (ED-PLG)"`), matching
-the title-line convention this developer uses across their other EDMC
-plugins.
+`create_plugin_app` builds a header row holding *only* the title (always
+visible, click anywhere to toggle collapse) and a content frame (status line,
+bars, last-event line, version line) that's `grid_remove()`d entirely while
+collapsed — `edplg_panel_collapsed` persists the choice. `PANEL_TITLE` is the
+spelled-out name plus abbreviation (`"Pillage Ledger & Gear-tracker
+(ED-PLG)"`), matching the title-line convention this developer uses across
+their other EDMC plugins; `_update_header_text()` renders it bare
+(`f"{arrow} {PANEL_TITLE}"`, no trailing colon or status) since nothing else
+shares that line. The live status label moved from the header into the
+content frame's first row (grid row 0, ahead of the bars at row 1) for the
+same reason.
+
+Every container above the individual bar canvases — `header`, `_content_frame`,
+the `bars` frame, each bar `row` — is `grid()`-ed with `sticky="w"`, never
+`"ew"`: a frame stretched wider than its packed/gridded children exposes its
+own background in the leftover space, and that background doesn't reliably
+follow EDMC's `theme.update()` walk either, which is what produced a stray
+white box trailing the title line in practice before this fix.
 
 `set_inventory_levels` updates the four bar rows (`BAR_ORDER = ("backpack",
 "ship_locker", "fleet_carrier_locker", "cargo")`) from `load.py`'s
@@ -528,15 +539,21 @@ would (re-appending after whatever else happens to be packed at the time).
 Every bar row is bound to `on_show_inventory` — there is no separate button.
 
 Each bar is a plain `tk.Canvas` (`_BAR_WIDTH` x `_BAR_HEIGHT`), redrawn by
-`_draw_bar()` on every update: a background rectangle in the theme-appropriate
-track colour (`_bar_track_color()`, mirroring EDMMM's own light/dark track
-logic) fully covers the canvas, then a fill rectangle on top sized to
-`total/capacity` (`_BAR_FILL_COLOUR`, or `_BAR_FULL_COLOUR` red at or over
-capacity). This replaced an earlier `ttk.Progressbar`-based implementation
-that rendered as an oversized, unthemed white box in practice — a `ttk`
-widget's native theme chrome doesn't reliably follow EDMC's `theme.update()`
-walk the way plain `tk` widgets do, whereas a canvas's own explicit
-background plus fully-covering rectangles look correct regardless. Bar/label
+`_draw_bar(canvas, total, capacity, colour)` on every update: a background
+rectangle in the theme-appropriate track colour (`_bar_track_color()`,
+mirroring EDMMM's own light/dark track logic) fully covers the canvas, outlined
+in that bar's own signature `colour`; a fill rectangle on top, sized to
+`total/capacity`, uses that same `colour` (or `_BAR_FULL_COLOUR` red at or
+over capacity). `colour` comes from `BAR_COLOURS[key]` (`ui.set_inventory_levels`
+and `_build_bars`'s initial draw both look it up, falling back to
+`_BAR_DEFAULT_COLOUR` for an unrecognised key) — Backpack blue, Ship Locker
+green, Carrier Locker violet, Cargo orange, so every bar reads as distinctly
+"its own bar" via the outline even at 0%, rather than a flat gray box. This
+replaced an earlier `ttk.Progressbar`-based implementation that rendered as
+an oversized, unthemed white box in practice — a `ttk` widget's native theme
+chrome doesn't reliably follow EDMC's `theme.update()` walk the way plain
+`tk` widgets do, whereas a canvas's own explicit background plus
+fully-covering rectangles look correct regardless. Bar/label
 widths (`_BAR_NAME_WIDTH`, `_BAR_VALUE_WIDTH`, `_BAR_WIDTH`) are fixed
 regardless of label length or count magnitude, per this developer's standing
 rule that nothing in a `plugin_app` frame may let variable content widen

@@ -74,20 +74,21 @@ which stays fixed so it keeps fitting the overlay's stack.
 
 ### 3.2 UI panel
 
-A header row on the EDMC main window is always visible and doubles as a
-collapse toggle (state persisted in EDMC's config, same click-to-collapse
-treatment as other panels in this developer's plugin lineup):
+A header row on the EDMC main window holds *only* the plugin title, is
+always visible, and doubles as a collapse toggle (state persisted in EDMC's
+config, same click-to-collapse treatment as other panels in this developer's
+plugin lineup):
 
 | Element | Content |
 |---------|---------|
-| Title | `▾ Pillage Ledger & Gear-tracker (ED-PLG):` (arrow flips to `▸` when collapsed) — click anywhere on the row to toggle. Spelled-out-name-plus-abbreviation, matching the title-line convention used across this developer's other EDMC plugins (e.g. EDMMM's "My Mission Manager (EDMMM)"). |
-| Status | Current sync state (e.g. "Inventory synced", "+2 item(s) pillaged") |
+| Title | `▾ Pillage Ledger & Gear-tracker (ED-PLG)` — nothing else shares this line (arrow flips to `▸` when collapsed) — click anywhere on the row to toggle. Spelled-out-name-plus-abbreviation, with no trailing status or punctuation, matching the title-line convention used across this developer's other EDMC plugins (e.g. EDMMM's bare "My Mission Manager (EDMMM)"). |
 
 Everything below the header collapses/expands together:
 
 | Element | Content |
 |---------|---------|
-| Inventory bars | One row each for Backpack and Ship Locker (always shown), Carrier Locker (only once a fleet carrier is confirmed for this commander), and Cargo (when a vehicle applies — §12). Each shows a fixed-width label, a fixed-width bar drawn on a plain `tk.Canvas` (red once full), and a `used/capacity` (or bare count where capacity is unknown) reading. Clicking anywhere on a row opens the inventory window (§3.5) — there is no separate button. |
+| Status | Current sync state (e.g. "Inventory synced", "+2 item(s) pillaged") — the first line of the content area, directly under the title |
+| Inventory bars | One row each for Backpack and Ship Locker (always shown), Carrier Locker (only once a fleet carrier is confirmed for this commander), and Cargo (when a vehicle applies — §12). Each has its own signature colour (`ui.BAR_COLOURS` — Backpack blue, Ship Locker green, Carrier Locker violet, Cargo orange, echoing this plugin's existing overlay category colours) drawn as the bar's outline even at 0%, so no bar ever reads as a flat gray box; the fill turns red once its store is completely full. Each row also shows a fixed-width label and a `used/capacity` (or bare count where capacity is unknown) reading. Clicking anywhere on a row opens the inventory window (§3.5) — there is no separate button. |
 | Last event | Most recent pillage message (green text) |
 
 The Carrier Locker row is gated on `InventoryTracker.fleet_carrier_callsign`
@@ -113,6 +114,13 @@ produced a visibly broken (oversized, unthemed white) bar in practice. A
 Canvas's own explicit background plus rectangles that fully cover it look
 correct under any theme regardless of that gap — the same approach this
 developer's other plugins (e.g. EDMMM) already use for their own bars.
+
+Every row-level container (the title header, the bars container, each bar
+row) is sized to its own content (`sticky="w"`, never `"ew"`) rather than
+stretched to fill the panel's width: a stretched frame's own background can
+be exposed in the gap past its packed children, and that background doesn't
+reliably follow the theme either — this showed up in practice as a stray
+white box trailing the title line before the fix.
 
 ### 3.3 Log output
 

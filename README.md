@@ -101,9 +101,9 @@ Launch Elite Dangerous and EDMC as usual, load your commander, and go raid somet
 
 ### The main panel
 
-The panel's title line — **▾ Pillage Ledger & Gear-tracker (ED-PLG):** followed by a live status — is clickable: it collapses the panel down to just that one line, or expands it back out. EDMC remembers whichever state you leave it in. (This spelled-out-name-plus-abbreviation title matches the convention used across this developer's other EDMC plugins.)
+The panel's title line is just **▾ Pillage Ledger & Gear-tracker (ED-PLG)** — nothing else — and is clickable: it collapses everything below down to just that one line, or expands it back out. EDMC remembers whichever state you leave it in. (This spelled-out-name-plus-abbreviation title, with nothing else sharing its line, matches the convention used across this developer's other EDMC plugins.)
 
-Expanded, the panel shows a bar for **Backpack** and **Ship Locker**, a fourth bar for whatever cargo hold you currently occupy (see [Ship & SRV cargo](#ship--srv-cargo)), and a **Carrier Locker** bar *only once ED-PLG has confirmed you actually own a fleet carrier* — a commander with no carrier never sees that row at all. Each bar turns red once its store is completely full. **Click any bar** to open the full inventory window — there's no separate button.
+Expanded, the live status line ("Awaiting Odyssey loot…", "Inventory synced", …) sits directly below the title, followed by a bar for **Backpack** and **Ship Locker**, a fourth bar for whatever cargo hold you currently occupy (see [Ship & SRV cargo](#ship--srv-cargo)), and a **Carrier Locker** bar *only once ED-PLG has confirmed you actually own a fleet carrier* — a commander with no carrier never sees that row at all. Each bar has its own colour (Backpack blue, Ship Locker green, Carrier Locker violet, Cargo orange) and turns red once its store is completely full. **Click any bar** to open the full inventory window — there's no separate button.
 
 ### Ship & SRV cargo
 
