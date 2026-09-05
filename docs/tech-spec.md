@@ -134,7 +134,7 @@ Log destination: `%LOCALAPPDATA%\EDMarketConnector\logs\EDMarketConnector.log`
 | `DockSRV` | `VehicleState.apply_dock_srv` — vehicle becomes `ship`; clears the recorded SRV type. |
 
 Every handled event ends by calling `window.refresh()` (no-op unless the
-inventory window is open) and `_refresh_panel_bars(state)` (see §6.6),
+inventory window is open) and `_refresh_bars(state)` (see §6.6),
 regardless of which branch above handled it — this keeps every main-panel bar
 current after any event, not just the ones that changed a given store.
 
@@ -282,37 +282,47 @@ the override mechanism.
 ### 6.3 `overlay.py` — `PillageOverlay`
 
 ```python
+BAR_ORDER: Tuple[str, ...]              # ("backpack", "ship_locker", "fleet_carrier_locker", "cargo")
+BAR_COLOURS: Dict[str, str]              # same keys/values as ui.BAR_COLOURS - canonical home is here
+BAR_DEFAULT_LABELS: Dict[str, str]       # "Backpack", "Ship Locker", "Carrier Locker", "Cargo"
+
 class PillageOverlay:
     @property available -> bool          # an overlay module was importable
     @property is_modern_overlay -> bool  # provider identifies as EDMCModernOverlay (vs. legacy EDMCOverlay)
     def set_enabled(enabled: bool) -> None
-    def set_bars_enabled(enabled: bool) -> None
     def set_position(x: int, y: int) -> None   # clamped to MAX_ORIGIN_X/Y
     def set_anchor(anchor: Optional[str]) -> None   # ModernOverlay-only; re-registers the plugin group
     def notify(internal_name: str, text: str, *, colour: str = COLOUR, ttl: int = TTL_SECONDS) -> None
-    def render_capacity_bars(values: Mapping[str, Tuple[str, int, int, str]]) -> None
+    def render_bars(rows: List[Tuple[str, str, int, Optional[int]]]) -> None
     def clear() -> None
-    def clear_capacity_bars() -> None
+    def clear_bars() -> None
 ```
+
+`BAR_ORDER`/`BAR_COLOURS`/`BAR_DEFAULT_LABELS` are canonically defined here
+(not `ui.py`) and imported by `ui.py` — the main panel's bars and the
+overlay's bars share one source of truth for keys, colours, and labels, and
+`ui.py` already imports overlay.py's position constants, so this keeps that
+same one-way dependency direction (overlay.py never imports ui.py).
 
 | Constant | Value | Meaning |
 |----------|-------|---------|
 | `ID_PREFIX` | `edplg-pillage-` | Pillage-line message IDs; groupable in ModernOverlay |
-| `CAPACITY_ID_PREFIX` | `edplg-locker-` | Capacity-bar element IDs (`{label,track,fill,value}-{category}`) |
+| `CAPACITY_ID_PREFIX` | `edplg-locker-` | Bar element IDs (`{label,track,fill,value}-{key}`, `key` from `BAR_ORDER`) — name predates this generalisation beyond the ship locker, left as-is since it's purely an internal namespace string |
 | `MAX_LINES` | 5 | Pillage stack depth |
 | `TTL_SECONDS` | 8 | Default per-line lifetime |
 | `COLOUR` | `#ffbf00` | Fallback pillage line colour (categories not in `CATEGORY_COLOURS`, and non-category callers like the locker warning) |
-| `CATEGORY_COLOURS` | Component `#4fc3f7` / Item `#81c784` / Data `#ba68c8` | Per-category pillage line colour, also reused for that category's capacity-bar row |
+| `CATEGORY_COLOURS` | Component `#4fc3f7` / Item `#81c784` / Data `#ba68c8` | Per-category pillage line colour (journal categories - unrelated to `BAR_COLOURS`, which is per-*bar*) |
+| `BAR_COLOURS` | backpack `#4fc3f7` / ship_locker `#81c784` / fleet_carrier_locker `#ba68c8` / cargo `#ff8c0d` | Per-bar colour, shared with `ui.BAR_COLOURS` |
 | `DEFAULT_ORIGIN_X` / `DEFAULT_ORIGIN_Y` | 900 / 120 | Default overlay origin |
 | `MAX_ORIGIN_X` / `MAX_ORIGIN_Y` | 1280 / 960 | Legacy virtual screen bounds; `set_position()` clamps to these |
 | `LINE_HEIGHT` | 18 | Pillage row spacing |
-| `CAPACITY_BAR_GAP` | 8 | Px between the pillage stack's bottom and the capacity panel |
-| `CAPACITY_ROW_HEIGHT` / `CAPACITY_LABEL_WIDTH` / `CAPACITY_BAR_WIDTH` / `CAPACITY_BAR_HEIGHT` / `CAPACITY_VALUE_GAP` | 16 / 60 / 140 / 10 / 8 | Capacity panel layout (px) |
-| `CAPACITY_TRACK_COLOUR` | `#555555` | Capacity bar's empty-track outline colour |
-| `CAPACITY_TTL` | 3600 | Capacity bar element TTL — long enough to look persistent between `ShipLocker` syncs, not a fade like pillage lines |
+| `CAPACITY_BAR_GAP` | 8 | Px between the pillage stack's bottom and the bars panel |
+| `CAPACITY_ROW_HEIGHT` / `CAPACITY_LABEL_WIDTH` / `CAPACITY_BAR_WIDTH` / `CAPACITY_BAR_HEIGHT` / `CAPACITY_VALUE_GAP` | 16 / 100 / 140 / 10 / 8 | Bars panel layout (px); label width widened from 60 to fit "Carrier Locker", the longest label |
+| `CAPACITY_TRACK_COLOUR` | `#555555` | Bar's empty-track outline colour |
+| `CAPACITY_TTL` | 3600 | Bar element TTL — long enough to look persistent between refreshes, not a fade like pillage lines |
 
 **Pillage lines** (unchanged mechanics from before, now with category colour):
-the client is created lazily on first `notify()`/`render_capacity_bars()` call.
+the client is created lazily on first `notify()`/`render_bars()` call.
 Lines are held as `(internal_name, text, expiry, colour)`, newest first; a call
 with an `internal_name` matching a live line replaces it rather than appending
 — pillage calls key on the resource's internal name, other callers (e.g. the
@@ -325,29 +335,37 @@ defaults to `(DEFAULT_ORIGIN_X, DEFAULT_ORIGIN_Y)` and is only ever changed via
 `set_position()`, which `load.py` calls with `ui.overlay_position()` at startup
 and after Settings is saved (see §6.6).
 
-**Capacity bars**: `render_capacity_bars({category: (label, total, capacity,
-colour), ...})` draws (or refreshes) a fixed-size panel — one row per
-`TRACKED_CATEGORIES` entry present in `values` — below the pillage stack. Each
-row is four elements sent via the legacy client: a text label, an outline-only
-`send_shape(shape="rect", fill="")` track, a filled `send_shape` bar scaled to
-`total/capacity` (or cleared via `send_raw({"id": ...})` — the documented
-legacy-clear idiom — when `total` is 0), and a `"total/capacity"` text value.
-Row count and element IDs are fixed (`TRACKED_CATEGORIES` never changes at
-runtime), so `clear_capacity_bars()` can blank every element deterministically
-without needing to track what was last rendered. `load.py`'s
-`_refresh_locker_capacity_bars()` is the only caller, invoked on every
-`ShipLocker` sync and once per commander session; it always passes all three
-categories with ship locker's flat `SHIP_LOCKER_CAPACITY` (never `None`), so
-the "unknown capacity" path in `render_capacity_bars` (`capacity` falsy →
-`total/capacity` becomes bare `total`, no fill) is reachable but currently
-unused — kept general enough that a future backpack-bars caller (which *can*
-have an unknown per-suit capacity) can reuse it unchanged.
+**Inventory bars**: `render_bars(rows)` draws (or refreshes) a variable-length
+panel below the pillage stack — one row per `(key, label, total, capacity)`
+tuple in `rows` whose `key` is in `BAR_ORDER`, in `BAR_ORDER`'s sequence
+regardless of `rows`' own order. `rows` is the *exact same list* `load.py`
+computes for `ui.set_inventory_levels()` (see §6.7), filtered down to
+whichever bars are overlay-enabled (`ui.overlay_enabled_bars()`) — panel and
+overlay can never disagree about a bar's data, since neither computes it
+independently. Each row is four elements sent via the legacy client: a text
+label, an outline-only `send_shape(shape="rect", fill="")` track, a filled
+`send_shape` bar scaled to `total/capacity` (or cleared via
+`send_raw({"id": ...})` — the documented legacy-clear idiom — when `total` is
+0), and a `"total/capacity"` (or bare `total` when `capacity` is falsy) text
+value, coloured via `BAR_COLOURS.get(key, COLOUR)`.
+
+Unlike the fixed three-category set this replaced, `rows` can vary in length
+and content call-to-call (a bar toggled off in Settings; Carrier Locker/Cargo
+becoming applicable or not). `render_bars` tracks `self._rendered_bar_keys`
+(the key set actually drawn last call) and, on each call, actively clears
+every element for any previously-rendered key absent from this call's `rows`
+— so a disabled or no-longer-applicable bar disappears immediately rather
+than freezing on its last value. `clear_bars()` clears everything currently
+rendered (used at `plugin_stop()`); passing an empty `rows` list to
+`render_bars()` has the same effect and is what a commander unchecking every
+overlay-bar box in Settings produces.
 
 **Failure isolation**: a pillage-line send failure (`_send_text` with
 `feature="pillage"`) drops the client and disables `_enabled` — the original,
-conservative behaviour. A capacity-bars send failure (`_send_shape`/`_send_clear`,
-or `_send_text` with `feature="bars"`, e.g. a provider without `send_shape`)
-only disables `_bars_enabled`, leaving already-working pillage lines on the
+conservative behaviour. A bars send failure (`_send_shape`/`_send_clear`, or
+`_send_text` with `feature="bars"`, e.g. a provider without `send_shape`)
+sets `_bars_broken = True`, checked at the top of `render_bars()` to skip
+future attempts for the session, leaving already-working pillage lines on the
 same client untouched.
 
 **ModernOverlay plugin-group registration** (`_register_plugin_group`, called
@@ -416,7 +434,7 @@ smaller than the current layout needs.
 **Carrier Locker tab visibility.** `InventoryWindow._update_carrier_tab_visibility()`,
 called at the end of every `refresh()`, hides the Carrier Locker pane via
 `ttk.Notebook.hide(tab_frame)` unless `tracker.fleet_carrier_callsign` is set —
-the same gate `load.py`'s `_refresh_panel_bars` uses for the main panel's
+the same gate `load.py`'s `_refresh_bars` uses for the main panel's
 Carrier Locker bar (§6.7) — and restores it via `notebook.add(tab_frame,
 text=...)` once it is (per Tcl/Tk's `ttk::notebook add`, re-adding a
 window already managed but hidden restores it to its *original* tab
@@ -509,7 +527,7 @@ create_plugin_app(parent: tk.Frame, on_show_inventory: Callable[[], None]) -> tk
 create_prefs(parent: nb.Notebook, overlay_available: bool, sound_available: bool, is_modern_overlay: bool, cmdr: str) -> nb.Frame
 overlay_enabled() -> bool
 overlay_position() -> Tuple[int, int]           # clamped to MAX_ORIGIN_X/Y
-overlay_bars_enabled() -> bool                   # ship locker capacity bars toggle (default off)
+overlay_enabled_bars() -> FrozenSet[str]         # which of overlay.BAR_ORDER draw on the overlay (all off by default)
 overlay_anchor() -> str                          # ModernOverlay panel anchor; defaulted if unset/invalid
 sound_enabled() -> bool
 message_format() -> str                          # raw template, defaulted if unset
@@ -549,7 +567,7 @@ white box trailing the title line in practice before this fix.
 
 `set_inventory_levels` updates the four bar rows (`BAR_ORDER = ("backpack",
 "ship_locker", "fleet_carrier_locker", "cargo")`) from `load.py`'s
-`_refresh_panel_bars`. A key omitted from `rows` — `"fleet_carrier_locker"`
+`_refresh_bars`. A key omitted from `rows` — `"fleet_carrier_locker"`
 while no fleet carrier is confirmed for this commander, or `"cargo"` while on
 foot with no vehicle — has its row hidden via `grid_remove()` rather than
 left showing a stale or zeroed value; a later `grid()` (bare, no args)
@@ -640,9 +658,11 @@ Uses `theme.update(frame)` for EDMC dark/light theme consistency. `ui.py` does n
 import `load.py`; opening the inventory window from a bar click is wired via the
 `on_show_inventory` callback to keep the dependency one-way. `ui.py` does import `update.py` (for
 `CONFIG_AUTO_UPDATE`/`RELEASES_PAGE_URL`) and `overlay.py` (for the
-`DEFAULT_ORIGIN_*`/`MAX_ORIGIN_*` constants only — it never touches the overlay
-client itself), one-way dependencies in the other direction: neither `update.py`
-nor `overlay.py` imports `ui.py`. See §14 for the last four functions.
+`DEFAULT_ORIGIN_*`/`MAX_ORIGIN_*` position constants and the shared
+`BAR_ORDER`/`BAR_COLOURS`/`BAR_DEFAULT_LABELS` bar constants — it never
+touches the overlay client itself), one-way dependencies in the other
+direction: neither `update.py` nor `overlay.py` imports `ui.py`. See §14 for
+the last four functions.
 
 `announced_categories()` reads a JSON list from config; an unset key (empty string)
 means "not configured" and returns every `TRACKED_CATEGORIES` entry, while an
@@ -661,13 +681,28 @@ The anchor `Entry` field in Settings is only enabled when `is_modern_overlay` is
 true — on legacy EDMCOverlay it's disabled with a hint that positioning is via
 X/Y instead (`_build_overlay_bars`).
 
+`overlay_enabled_bars()` returns which of `overlay.BAR_ORDER` should draw on
+the in-game overlay, one independent boolean config key per bar
+(`edplg_overlay_bar_{key}`) rather than a single JSON list like
+`announced_categories()` — there's no "all configured vs. explicitly none"
+ambiguity to resolve here (unlike an empty vs. unset category list), so a
+plain per-key boolean is simpler and each toggle is independently
+addressable. `ship_locker` is the one exception: its default (when its own
+new key has never been set) reads the legacy `edplg_overlay_bars_enabled`
+key instead of `False`, so a commander who already had ship locker bars on
+before this was split into per-bar toggles doesn't have it silently turn off
+on upgrade. `_build_overlay_bars` builds one `nb.Checkbutton` per
+`BAR_ORDER` entry into `_overlay_bar_vars: Dict[str, tk.BooleanVar]`;
+`save_prefs` writes each back to its own config key.
+
 Config keys:
 
 | Key | Type | Purpose |
 |-----|------|---------|
 | `edplg_overlay_enabled` | bool | Overlay toggle (default on) |
 | `edplg_overlay_x` / `edplg_overlay_y` | int | Overlay origin (default 900 / 120) |
-| `edplg_overlay_bars_enabled` | bool | Ship locker capacity bars on the overlay (default **off**) |
+| `edplg_overlay_bar_{backpack,ship_locker,fleet_carrier_locker,cargo}` | bool | Per-bar overlay toggle, one per `overlay.BAR_ORDER` entry (all default **off**) |
+| `edplg_overlay_bars_enabled` | bool | **Legacy**, pre-dating the per-bar keys above (single "show ship locker capacity bars" checkbox). Never written to anymore; read only as the `ship_locker` toggle's own default, so upgrading doesn't silently turn it off for an existing install (`ui.overlay_enabled_bars()`) |
 | `edplg_overlay_anchor` | str | ModernOverlay panel anchor (default `"ne"`) |
 | `edplg_sound_enabled` | bool | Pickup notification sound (default **off**) |
 | `edplg_message_format` | str | Pillage message template (default if empty) |
@@ -680,11 +715,11 @@ Config keys:
 ### 6.7 `load.py` — event dispatch
 
 `journal_entry()` delegates to `_dispatch()` and then calls `window.refresh()` and
-`_refresh_panel_bars(state)` in a `finally` block, so the window and main-panel
+`_refresh_bars(state)` in a `finally` block, so the window and main-panel
 bars both track state even if a handler raises, and stay current after *any*
 event rather than only the ones each function's own branch handles.
 
-`_refresh_panel_bars(state)` builds up to four `(key, label, total, capacity)`
+`_refresh_bars(state)` builds up to four `(key, label, total, capacity)`
 rows described in §6.6 from `_tracker.snapshot()`, `_suit.capacities()`, and
 `_vehicle.cargo_bar(state)` (see §6.9), and passes them to
 `ui.set_inventory_levels()`. The backpack row's capacity is `None` unless
@@ -694,15 +729,29 @@ The `fleet_carrier_locker` row is included only when
 `_tracker.fleet_carrier_callsign` is set - real CAPI locker data has been
 seen for this commander - rather than unconditionally at 0; see §6.6's
 carrier-gating note for why an unset callsign is a reliable enough "no
-carrier" signal. `_on_commander_session()` calls `_vehicle.reset()` before
-resyncing, since a fresh journal file replays its own Embark/LaunchSRV
-history from scratch and any vehicle state carried over from a previous
-session would otherwise be stale.
+carrier" signal.
+
+The same `rows` list is then filtered to `ui.overlay_enabled_bars()` and
+passed to `_overlay.render_bars()` — this is the *only* place overlay bars
+are computed, from the identical data the main panel just received, so the
+two can never disagree. This single function replaced an earlier
+ship-locker-only `_refresh_locker_capacity_bars()` that computed its own,
+separate ship-locker-only payload; see §6.3 for `render_bars`'s own
+semantics (clearing a bar that drops out of `rows`, etc).
+
+`_on_commander_session()` calls `_vehicle.reset()` before resyncing, since a
+fresh journal file replays its own Embark/LaunchSRV history from scratch and
+any vehicle state carried over from a previous session would otherwise be
+stale. Both `_on_commander_session()` and the `ShipLocker` branch of
+`_dispatch()` rely on `journal_entry()`'s unconditional `_refresh_bars(state)`
+call in its `finally` block (above) rather than calling `_refresh_bars`
+themselves — every dispatched event ends up there regardless of branch, so a
+second explicit call from inside `_dispatch()` would just be redundant.
 
 `journal_entry()` also caches its `state` argument into module-level
 `_last_state` before dispatching. `capi_fleetcarrier()` - a separate EDMC
 callback invoked asynchronously on its own, with no `state` parameter of its
-own - calls `_refresh_panel_bars(_last_state)` after applying (or clearing)
+own - calls `_refresh_bars(_last_state)` after applying (or clearing)
 carrier data for the active commander, using that cached value; without this
 the Carrier Locker row would only appear (or update) on the *next* journal
 event after CAPI data actually arrived, rather than as soon as it does.
@@ -726,13 +775,12 @@ per-category iteration through `ui.announced_categories()` before logging/notify
 pillage message (not once per item). Both `_overlay.notify()` calls (pillage and
 locker warning) pass `colour=overlay.CATEGORY_COLOURS.get(category, overlay.COLOUR)`.
 
-`_refresh_locker_capacity_bars()` builds `{category: (label, total, capacity,
-colour)}` from the current tracker snapshot and `SHIP_LOCKER_CAPACITY`, and calls
-`_overlay.render_capacity_bars()` (a cheap no-op when bars are disabled). Called
-from `_on_commander_session()` (so the panel appears as soon as EDMC has ship
-locker state, not only after the next transfer), the `ShipLocker` branch of
-`_dispatch()`, and `prefs_changed()` (so toggling the bars checkbox on redraws
-immediately rather than waiting for the next `ShipLocker` event).
+`prefs_changed()` calls `_refresh_bars(_last_state)` directly (using the
+cached state from the most recent `journal_entry()` call, same as
+`capi_fleetcarrier()` does - see above) since it isn't itself a journal
+event and so isn't covered by `journal_entry()`'s own `finally`-block call;
+this is what makes toggling an overlay-bar checkbox redraw immediately on
+Save rather than waiting for the next journal event.
 
 Return value: last pillage message string (displayed in EDMC status area) or `None`.
 
@@ -973,11 +1021,16 @@ Manual verification steps for releases:
 17. Loot one resource from each category (Assets/Goods/Data); confirm each
     pillage line draws in its own colour (`overlay.CATEGORY_COLOURS`) rather
     than one flat colour.
-18. Enable **Show ship locker capacity bars on the overlay**; confirm a
-    three-row panel (Assets/Goods/Data — label, bar, total/1000) appears below
-    the pillage stack and updates on the next `ShipLocker` sync. Disable the
-    checkbox and confirm the panel is actually removed, not just stops
-    updating.
+18. In Settings, check the **Backpack**/**Ship Locker**/**Carrier
+    Locker**/**Cargo** overlay boxes one at a time; confirm each bar appears
+    below the pillage stack immediately on Save (not waiting for the next
+    journal event), colour-matched to the main panel, and updates live as
+    its store changes. Uncheck one and confirm its bar is actually removed
+    (all four elements cleared), not just frozen on its last value. With
+    Carrier Locker and Cargo checked, confirm they only actually draw when
+    they'd also show on the main panel (a confirmed carrier; a vehicle
+    whose cargo hold applies) — check on foot with no carrier and confirm
+    neither draws despite being enabled.
 19. With EDMCModernOverlay specifically installed (not legacy EDMCOverlay),
     set an **Overlay panel anchor** and confirm (this is the unvalidated
     part — see `TODO.md`) whether ED-PLG's elements actually get a
@@ -1000,7 +1053,11 @@ Manual verification steps for releases:
 Non-game verification: `suit.py`, `cargo.py`, `names.py`, `names_fdevids.py`,
 `inventory.py`, `overlay.py`, `sound.py`, and `window.py` can be exercised
 outside EDMC by stubbing the `config` and `theme` modules in `sys.modules` and
-replaying real journal lines through the tracker.
+replaying real journal lines through the tracker. `overlay.py`'s bar/pillage
+rendering specifically needs a fake `edmcoverlay` module too (a plain
+`Overlay` class recording `send_message`/`send_shape`/`send_raw` calls into a
+list a test can assert against) - real installs vary in exactly what they
+send back, but the calls `PillageOverlay` itself makes are what matters here.
 
 ## 12. Dependencies
 

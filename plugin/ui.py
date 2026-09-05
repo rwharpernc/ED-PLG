@@ -17,7 +17,15 @@ from ttkHyperlinkLabel import HyperlinkLabel
 
 from . import __version__, suit
 from .inventory import CATEGORY_SHORT, TRACKED_CATEGORIES
-from .overlay import DEFAULT_ORIGIN_X, DEFAULT_ORIGIN_Y, MAX_ORIGIN_X, MAX_ORIGIN_Y
+from .overlay import (
+    BAR_COLOURS,
+    BAR_DEFAULT_LABELS,
+    BAR_ORDER,
+    DEFAULT_ORIGIN_X,
+    DEFAULT_ORIGIN_Y,
+    MAX_ORIGIN_X,
+    MAX_ORIGIN_Y,
+)
 from .update import CONFIG_AUTO_UPDATE, RELEASES_PAGE_URL
 
 plugin_name = os.path.basename(os.path.dirname(__file__))
@@ -26,7 +34,15 @@ logger = logging.getLogger(f"{appname}.{plugin_name}")
 CONFIG_OVERLAY_ENABLED = "edplg_overlay_enabled"
 CONFIG_OVERLAY_X = "edplg_overlay_x"
 CONFIG_OVERLAY_Y = "edplg_overlay_y"
+CONFIG_OVERLAY_BAR_PREFIX = "edplg_overlay_bar_"
+"""Per-bar overlay toggle config keys are CONFIG_OVERLAY_BAR_PREFIX + key,
+e.g. "edplg_overlay_bar_backpack" - one per overlay.BAR_ORDER entry, each
+independently on/off (see overlay_enabled_bars()/_build_overlay_bars())."""
 CONFIG_OVERLAY_BARS_ENABLED = "edplg_overlay_bars_enabled"
+"""Legacy single "show ship locker capacity bars" checkbox, pre-dating the
+per-bar toggles above. Migration-only: overlay_enabled_bars() reads this as
+the "ship_locker" toggle's own default, so upgrading doesn't silently turn
+it off for anyone who already had it on. Never written to anymore."""
 CONFIG_OVERLAY_ANCHOR = "edplg_overlay_anchor"
 CONFIG_SOUND_ENABLED = "edplg_sound_enabled"
 CONFIG_MESSAGE_FORMAT = "edplg_message_format"
@@ -41,15 +57,11 @@ CONFIG_PANEL_COLLAPSED = "edplg_panel_collapsed"
 # name; only user-facing display text uses the new one.
 PANEL_TITLE = "ED Pillage & Payload (ED-PLG)"
 
-# Fixed order of the main-panel inventory bars. "fleet_carrier_locker" and
-# "cargo" are conditional - see set_inventory_levels - and grid_remove()'d
-# entirely when absent from the update rather than shown empty/stale.
-BAR_ORDER: Tuple[str, ...] = ("backpack", "ship_locker", "fleet_carrier_locker", "cargo")
-BAR_DEFAULT_LABELS: Dict[str, str] = {
-    "backpack": "Backpack",
-    "ship_locker": "Ship Locker",
-    "fleet_carrier_locker": "Carrier Locker",
-}
+# BAR_ORDER/BAR_DEFAULT_LABELS/BAR_COLOURS are canonically defined in
+# overlay.py (shared with the in-game overlay's own bars - same keys, same
+# colours) and imported above. "fleet_carrier_locker" and "cargo" are
+# conditional - see set_inventory_levels - and grid_remove()'d entirely when
+# absent from the update rather than shown empty/stale.
 
 # Bar widget geometry - fixed pixel/character widths so a long label or a
 # large count can never widen EDMC's main window (see the plugin_app sizing
@@ -64,17 +76,6 @@ _BAR_VALUE_WIDTH = 13
 _BAR_WIDTH = 80
 _BAR_HEIGHT = 8
 
-# Each bar gets its own signature colour rather than one flat fill for all
-# four - Backpack/Ship Locker/Carrier Locker echo the category colours
-# already used elsewhere in this plugin's overlay output (see
-# overlay.CATEGORY_COLOURS), and Cargo gets the Elite accent orange since
-# it's a ship/SRV concept rather than an on-foot microresource one.
-BAR_COLOURS: Dict[str, str] = {
-    "backpack": "#4fc3f7",
-    "ship_locker": "#81c784",
-    "fleet_carrier_locker": "#ba68c8",
-    "cargo": "#ff8c0d",
-}
 _BAR_FULL_COLOUR = "#c0392b"
 _BAR_DEFAULT_COLOUR = "#9e9e9e"
 _BAR_TRACK_LIGHT = "#c0c4c7"
@@ -125,7 +126,7 @@ _panel_collapsed: bool = False
 _overlay_var: Optional[tk.BooleanVar] = None
 _overlay_x_var: Optional[tk.StringVar] = None
 _overlay_y_var: Optional[tk.StringVar] = None
-_overlay_bars_var: Optional[tk.BooleanVar] = None
+_overlay_bar_vars: Dict[str, tk.BooleanVar] = {}
 _overlay_anchor_var: Optional[tk.StringVar] = None
 _auto_update_var: Optional[tk.BooleanVar] = None
 _sound_var: Optional[tk.BooleanVar] = None
@@ -580,7 +581,7 @@ def create_prefs(
 ) -> nb.Frame:
     """Create the ED-PLG tab in EDMC's settings window."""
     global _overlay_var, _overlay_x_var, _overlay_y_var, _auto_update_var
-    global _overlay_bars_var, _overlay_anchor_var
+    global _overlay_bar_vars, _overlay_anchor_var
     global _sound_var, _message_format_var
     global _announce_vars, _override_vars, _override_defaults
 
@@ -688,22 +689,39 @@ def _build_overlay_bars(
     *,
     start_row: int,
 ) -> int:
-    """Add the ship locker capacity bars checkbox and (ModernOverlay-only) panel anchor field."""
-    global _overlay_bars_var, _overlay_anchor_var
+    """Add the per-bar overlay checkboxes and (ModernOverlay-only) panel anchor field."""
+    global _overlay_bar_vars, _overlay_anchor_var
 
     row = start_row
-    _overlay_bars_var = tk.BooleanVar(value=overlay_bars_enabled())
-    nb.Checkbutton(
-        frame,
-        text="Show ship locker capacity bars on the overlay",
-        variable=_overlay_bars_var,
-        state=tk.NORMAL if overlay_available else tk.DISABLED,
-    ).grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 0))
+    nb.Label(frame, text="Show these inventory bars on the overlay:").grid(
+        row=row, column=0, sticky=tk.W, padx=10, pady=(0, 2),
+    )
+    row += 1
+
+    enabled = overlay_enabled_bars()
+    _overlay_bar_vars = {}
+    state = tk.NORMAL if overlay_available else tk.DISABLED
+
+    bars_row = nb.Frame(frame)
+    bars_row.grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 2))
+    for key in BAR_ORDER:
+        var = tk.BooleanVar(value=key in enabled)
+        _overlay_bar_vars[key] = var
+        nb.Checkbutton(
+            bars_row, text=BAR_DEFAULT_LABELS.get(key, key), variable=var, state=state,
+        ).pack(side=tk.LEFT, padx=(0, 12))
     row += 1
 
     nb.Label(
         frame,
-        text="A small persistent panel below the pillage stack, refreshed whenever the ship locker changes.",
+        text=(
+            "Each shown as its own small persistent bar below the pillage stack, "
+            "colour-matched to the main panel. Carrier Locker and Cargo only draw "
+            "when they'd also show on the main panel (a confirmed carrier; a "
+            "ship/SRV cargo hold applies)."
+        ),
+        wraplength=440,
+        justify=tk.LEFT,
     ).grid(row=row, column=0, sticky=tk.W, padx=10, pady=(2, 10))
     row += 1
 
@@ -909,8 +927,20 @@ def overlay_position() -> Tuple[int, int]:
     return max(0, min(MAX_ORIGIN_X, x)), max(0, min(MAX_ORIGIN_Y, y))
 
 
-def overlay_bars_enabled() -> bool:
-    return bool(config.get_bool(CONFIG_OVERLAY_BARS_ENABLED, default=False))
+def overlay_enabled_bars() -> FrozenSet[str]:
+    """
+    Which of overlay.BAR_ORDER should draw on the in-game overlay, each
+    independently toggled in Settings. "ship_locker" defaults to whatever
+    the older single "show ship locker capacity bars" checkbox was already
+    set to (see CONFIG_OVERLAY_BARS_ENABLED), so splitting it into per-bar
+    toggles doesn't silently turn it off for an existing install.
+    """
+    enabled = set()
+    for key in BAR_ORDER:
+        default = config.get_bool(CONFIG_OVERLAY_BARS_ENABLED, default=False) if key == "ship_locker" else False
+        if config.get_bool(f"{CONFIG_OVERLAY_BAR_PREFIX}{key}", default=default):
+            enabled.add(key)
+    return frozenset(enabled)
 
 
 def overlay_anchor() -> str:
@@ -950,8 +980,8 @@ def save_prefs(cmdr: str) -> bool:
         config.set(CONFIG_SOUND_ENABLED, _sound_var.get())
     if _message_format_var is not None:
         config.set(CONFIG_MESSAGE_FORMAT, _message_format_var.get().strip())
-    if _overlay_bars_var is not None:
-        config.set(CONFIG_OVERLAY_BARS_ENABLED, _overlay_bars_var.get())
+    for key, var in _overlay_bar_vars.items():
+        config.set(f"{CONFIG_OVERLAY_BAR_PREFIX}{key}", var.get())
     if _overlay_anchor_var is not None:
         anchor = _overlay_anchor_var.get().strip().lower()
         if anchor in VALID_OVERLAY_ANCHORS:

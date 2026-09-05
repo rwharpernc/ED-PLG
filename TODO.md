@@ -85,10 +85,15 @@ to any version; pick items up as desired.
   implemented from its developer docs alone, not yet confirmed to actually
   produce a background panel/anchor in-game. If the API shape is wrong,
   either fix the call or drop the feature; it degrades safely either way.
-- [ ] Backpack capacity bars on the overlay (ship locker only for now — see
-  design-spec §3.4 "Ship locker capacity panel" for why backpack was left
-  out of this pass: capacity can be unknown per suit, unlike ship locker's
-  flat 1000/category).
+- [x] Backpack capacity bars on the overlay (ship locker only in the
+  original pass). Generalised the single ship-locker checkbox into four
+  independent per-bar toggles (Backpack/Ship Locker/Carrier
+  Locker/Cargo — `overlay.render_bars`, `ui._build_overlay_bars`), computed
+  from the exact same rows the main panel's bars use so the two can never
+  disagree. Backpack's unknown-per-suit capacity (the original blocker)
+  just renders as a bare count with no fill, same as the main panel already
+  does for it. An existing install's saved ship-locker preference migrates
+  forward as that toggle's own default.
 
 ## Fixable gaps
 

@@ -177,23 +177,34 @@ line (`overlay.CATEGORY_COLOURS`). The ship locker capacity warning (§8)
 keeps its own distinct red regardless of category, since urgency there
 matters more than category identity.
 
-#### Ship locker capacity panel
+#### Overlay inventory bars
 
-An optional persistent panel drawn below the pillage stack — one row per
-category (Assets/Goods/Data), each a label, a track-and-fill bar, and a
-"total/capacity" value, all in that category's colour. Off by default
-(**"Show ship locker capacity bars on the overlay"** in Settings); when on,
-it redraws on every `ShipLocker` sync (and once at session start) so it
-reflects the current ship locker without needing the inventory window open.
+An optional persistent panel drawn below the pillage stack, mirroring the
+main panel's four bars (§3.2) one-for-one — Backpack, Ship Locker, Carrier
+Locker, Cargo — each independently toggled off by default in Settings, and
+each a label, a track-and-fill bar, and a "total/capacity" value in that
+bar's own colour (`overlay.BAR_COLOURS`, the same values `ui.BAR_COLOURS`
+uses so the panel and overlay never disagree about which colour means
+which store). Both the panel's bars and the overlay's are computed from the
+exact same rows in a single pass (`load.py`'s `_refresh_bars`) and redrawn
+after every journal event, so Carrier Locker and Cargo appear/disappear on
+the overlay under the same conditions they do on the panel — a confirmed
+fleet carrier, a vehicle whose cargo hold currently applies — rather than
+needing separate logic to decide when each is relevant.
 
 Unlike pillage lines, rows use a long TTL rather than a short fade — the
 panel is meant to look persistent between updates, not disappear between
-transfers. It uses EDMCModernOverlay's shape primitives (`send_shape`, via
-the same legacy-compatible client), not just text — see
-`docs/tech-spec.md` §6.3 for the exact payload shape. Backpack capacity
-bars were considered but left out of this pass: ship locker capacity is
-always known (flat 1000/category), while backpack capacity can be unknown
-per suit (§7), which would need extra handling this pass didn't need.
+transfers. A bar toggled off in Settings (or a conditional bar - Carrier
+Locker/Cargo - that's no longer applicable) has its previously-drawn
+elements actively cleared rather than left showing a stale reading. It uses
+EDMCModernOverlay's shape primitives (`send_shape`, via the same
+legacy-compatible client), not just text — see `docs/tech-spec.md` §6.3 for
+the exact payload shape.
+
+This generalises what shipped in an earlier release as a ship-locker-only
+feature (single "show ship locker capacity bars" checkbox); an existing
+install's saved preference for that checkbox becomes the new Ship Locker
+toggle's own default, so upgrading doesn't silently turn it off.
 
 #### ModernOverlay panel group (experimental)
 

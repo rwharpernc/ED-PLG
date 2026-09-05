@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **All four inventory bars can now show on the in-game overlay, each
+  independently toggled.** Generalises the earlier ship-locker-only
+  overlay panel: **File → Settings → ED-PLG** now has one checkbox per bar
+  — Backpack, Ship Locker, Carrier Locker, Cargo — colour-matched to the
+  main panel (`overlay.BAR_COLOURS`, shared with `ui.BAR_COLOURS` so the
+  two can't disagree) and computed from the exact same data as the main
+  panel's own bars (`load.py`'s `_refresh_bars` builds one row list and
+  feeds both). Carrier Locker and Cargo only actually draw on the overlay
+  when they'd also show on the panel (a confirmed carrier; a vehicle whose
+  cargo hold applies) — enabling their checkbox means "show it when
+  relevant," not "always show it." A bar toggled off, or a conditional bar
+  that stops applying, has its overlay elements actively cleared rather
+  than left frozen on a stale value. An existing install's saved "show ship
+  locker capacity bars" preference becomes the new Ship Locker toggle's own
+  default, so upgrading doesn't silently turn it off.
+
 ## [1.2.0] - 2026-09-05
 
 ### Added

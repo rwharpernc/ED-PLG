@@ -61,7 +61,7 @@ _ui_frame: Optional[tk.Frame] = None
 _last_state: Dict[str, Any] = {}
 """Most recent journal_entry() state dict, cached so capi_fleetcarrier() -
 called separately from journal_entry(), with no state of its own - can still
-refresh the main-panel bars (see _refresh_panel_bars) when CAPI data arrives
+refresh the main-panel bars (see _refresh_bars) when CAPI data arrives
 asynchronously, rather than only on the next journal event."""
 _updater: Optional[UpdateManager] = None
 """Kept alive purely so the background check thread's bound method holds a
@@ -77,7 +77,6 @@ def plugin_start3(plugin_dir: str) -> str:
     _overlay.set_enabled(ui.overlay_enabled())
     _overlay.set_position(*ui.overlay_position())
     _overlay.set_anchor(ui.overlay_anchor())
-    _overlay.set_bars_enabled(ui.overlay_bars_enabled())
     _sound.set_enabled(ui.sound_enabled())
     if not _overlay.available:
         logger.info("No overlay plugin found; pillage overlay disabled")
@@ -110,7 +109,7 @@ def plugin_stop() -> None:
     names.save_learned_names()
     suit.save_overrides()
     _overlay.clear()
-    _overlay.clear_capacity_bars()
+    _overlay.clear_bars()
     window.close()
     logger.info("ED-PLG shutting down")
 
@@ -119,7 +118,7 @@ def plugin_app(parent: tk.Frame) -> tk.Frame:
     """Create ED-PLG widgets on the EDMC main window."""
     global _ui_frame
     _ui_frame = ui.create_plugin_app(parent, _show_inventory)
-    _refresh_panel_bars({})
+    _refresh_bars({})
     return _ui_frame
 
 
@@ -138,9 +137,8 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
     _overlay.set_enabled(ui.save_prefs(cmdr))
     _overlay.set_position(*ui.overlay_position())
     _overlay.set_anchor(ui.overlay_anchor())
-    _overlay.set_bars_enabled(ui.overlay_bars_enabled())
     _sound.set_enabled(ui.sound_enabled())
-    _refresh_locker_capacity_bars()
+    _refresh_bars(_last_state)
 
 
 def journal_entry(
@@ -159,7 +157,7 @@ def journal_entry(
     finally:
         # No-op unless the inventory window is open.
         window.refresh()
-        _refresh_panel_bars(state)
+        _refresh_bars(state)
 
 
 def _dispatch(
@@ -186,7 +184,6 @@ def _dispatch(
         logger.debug("Ship locker baseline synced")
         ui.set_status("Ship locker synced")
         _warn_ship_locker_capacity()
-        _refresh_locker_capacity_bars()
         return None
 
     if event in ("SuitLoadout", "SwitchSuitLoadout"):
@@ -253,7 +250,7 @@ def capi_fleetcarrier(data: CAPIData) -> Optional[str]:
         )
         if request_cmdr == _tracker.commander:
             ui.set_status(f"No carrier locker ({request_cmdr})")
-            _refresh_panel_bars(_last_state)
+            _refresh_bars(_last_state)
         return None
 
     stack_count = _tracker.apply_fleet_carrier_locker(
@@ -280,7 +277,7 @@ def capi_fleetcarrier(data: CAPIData) -> Optional[str]:
         stack_count,
     )
     ui.set_status(f"Carrier locker synced ({label}, {stack_count} stacks)")
-    _refresh_panel_bars(_last_state)
+    _refresh_bars(_last_state)
     return None
 
 
@@ -289,7 +286,6 @@ def _on_commander_session(cmdr: str, state: Dict[str, Any], *, reason: str) -> N
     switched = _tracker.set_commander(cmdr)
     _tracker.sync_all_from_state(state)
     _warn_ship_locker_capacity()
-    _refresh_locker_capacity_bars()
 
     # EDMC only (re)populates the backpack from a fresh Backpack/Resupply event,
     # and clears it on LoadGame. A commander already on foot when EDMC attaches
@@ -342,13 +338,16 @@ def _warn_ship_locker_capacity() -> None:
         )
 
 
-def _refresh_panel_bars(state: Dict[str, Any]) -> None:
+def _refresh_bars(state: Dict[str, Any]) -> None:
     """
-    Redraw the main-panel inventory bars (see ui.set_inventory_levels) from
-    the current tracker/vehicle state. Cheap and called after every journal
-    event (like window.refresh()) rather than only from the handlers that
-    changed a given store, so a bar can never go stale after an event this
-    function doesn't otherwise know about.
+    Redraw the main-panel inventory bars (see ui.set_inventory_levels) and,
+    for whichever of them are overlay-enabled (see ui.overlay_enabled_bars),
+    the matching in-game overlay bars (see overlay.PillageOverlay.render_bars)
+    - both from the exact same computed rows, so panel and overlay can never
+    disagree about a bar's data. Cheap and called after every journal event
+    (like window.refresh()) rather than only from the handlers that changed
+    a given store, so a bar can never go stale after an event this function
+    doesn't otherwise know about.
     """
     snapshot = _tracker.snapshot()
     backpack_capacities = _suit.capacities(cmdr=_tracker.commander)
@@ -388,23 +387,8 @@ def _refresh_panel_bars(state: Dict[str, Any]) -> None:
 
     ui.set_inventory_levels(rows)
 
-
-def _refresh_locker_capacity_bars() -> None:
-    """
-    Redraw the ship locker capacity panel (see overlay.render_capacity_bars)
-    from the current tracker snapshot. Cheap no-op when bars are disabled or
-    no overlay client is connected - see PillageOverlay.render_capacity_bars.
-    """
-    values = {
-        category: (
-            CATEGORY_SHORT[category],
-            sum(_tracker.ship_locker.get(category, {}).values()),
-            SHIP_LOCKER_CAPACITY[category],
-            overlay.CATEGORY_COLOURS.get(category, overlay.COLOUR),
-        )
-        for category in TRACKED_CATEGORIES
-    }
-    _overlay.render_capacity_bars(values)
+    overlay_enabled_bars = ui.overlay_enabled_bars()
+    _overlay.render_bars([row for row in rows if row[0] in overlay_enabled_bars])
 
 
 def _handle_backpack_change(

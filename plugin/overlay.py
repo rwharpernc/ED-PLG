@@ -5,11 +5,9 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
 from config import appname
-
-from .inventory import TRACKED_CATEGORIES
 
 try:
     from EDMCOverlay import edmcoverlay  # EDMCModernOverlay, legacy EDMCOverlay
@@ -40,26 +38,45 @@ TEXT_SIZE = "normal"
 
 # Pillage-line colour per journal category (Component/Item/Data), so the
 # stack is scannable by category at a glance rather than one flat colour.
-# Falls back to COLOUR for anything not in TRACKED_CATEGORIES.
+# Falls back to COLOUR for anything not listed here.
 CATEGORY_COLOURS: Dict[str, str] = {
     "Component": "#4fc3f7",  # Assets - blue
     "Item": "#81c784",       # Goods - green
     "Data": "#ba68c8",       # Data - violet
 }
 
-# Ship locker capacity bars: a persistent (long-TTL, refreshed on every
-# ShipLocker sync) row per category below the pillage stack. Row count is
-# fixed at len(CATEGORY_COLOURS) since ship locker always tracks the same
-# three categories with a known capacity - no dynamic add/remove needed.
+# The four inventory bars the main panel (ui.py) and this overlay can both
+# show - same keys, same colours, same fixed order - each independently
+# togglable on the overlay via Settings (see ui.overlay_enabled_bars()).
+# Canonical home for these constants is here rather than ui.py so overlay.py
+# doesn't need to import from ui.py (ui.py already imports overlay.py's
+# position constants - this keeps that same one-way dependency direction).
+BAR_ORDER: Tuple[str, ...] = ("backpack", "ship_locker", "fleet_carrier_locker", "cargo")
+BAR_COLOURS: Dict[str, str] = {
+    "backpack": "#4fc3f7",
+    "ship_locker": "#81c784",
+    "fleet_carrier_locker": "#ba68c8",
+    "cargo": "#ff8c0d",
+}
+BAR_DEFAULT_LABELS: Dict[str, str] = {
+    "backpack": "Backpack",
+    "ship_locker": "Ship Locker",
+    "fleet_carrier_locker": "Carrier Locker",
+    "cargo": "Cargo",
+}
+
+# Inventory bars: a persistent (long-TTL, refreshed on every relevant
+# journal event) row per BAR_ORDER entry present in a render_bars() call,
+# below the pillage stack.
 CAPACITY_BAR_GAP = 8            # px between the pillage stack and the bars
 CAPACITY_ROW_HEIGHT = 16
-CAPACITY_LABEL_WIDTH = 60
+CAPACITY_LABEL_WIDTH = 100       # fits "Carrier Locker", the longest label
 CAPACITY_BAR_WIDTH = 140
 CAPACITY_BAR_HEIGHT = 10
 CAPACITY_VALUE_GAP = 8
 CAPACITY_TRACK_COLOUR = "#555555"
-# Long enough to look persistent between updates (ShipLocker only fires on a
-# transfer); refreshed well before this on any further activity.
+# Long enough to look persistent between updates; refreshed well before this
+# on any further activity.
 CAPACITY_TTL = 3600
 
 
@@ -69,11 +86,11 @@ class PillageOverlay:
     def __init__(self) -> None:
         self._client: Optional[Any] = None
         self._enabled = True
-        self._bars_enabled = False
+        self._bars_broken = False
         # (internal_name, text, expiry, colour) — newest first.
         self._lines: List[Tuple[str, str, float, str]] = []
         self._rendered_rows = 0
-        self._bars_rendered = False
+        self._rendered_bar_keys: FrozenSet[str] = frozenset()
         self._origin_x = DEFAULT_ORIGIN_X
         self._origin_y = DEFAULT_ORIGIN_Y
         self._anchor: Optional[str] = None
@@ -97,11 +114,6 @@ class PillageOverlay:
         if self._enabled and not enabled:
             self.clear()
         self._enabled = enabled
-
-    def set_bars_enabled(self, enabled: bool) -> None:
-        if self._bars_enabled and not enabled:
-            self.clear_capacity_bars()
-        self._bars_enabled = enabled
 
     def set_position(self, x: int, y: int) -> None:
         """Move where the pillage stack (and capacity bars below it) draw,
@@ -149,18 +161,24 @@ class PillageOverlay:
         self._prune(now)
         self._render(client, now)
 
-    def render_capacity_bars(self, values: Mapping[str, Tuple[str, int, int, str]]) -> None:
+    def render_bars(self, rows: List[Tuple[str, str, int, Optional[int]]]) -> None:
         """
-        Draw (or refresh) the ship locker capacity panel below the pillage
-        stack: one row per TRACKED_CATEGORIES entry present in `values`, as
-        {category: (label, total, capacity, colour)}.
+        Draw (or refresh) the inventory-bars panel below the pillage stack:
+        one row per (key, label, total, capacity) tuple in `rows` - the same
+        shape (and, for whichever keys are present, the exact same data) as
+        `ui.set_inventory_levels()` uses for the main panel's bars - coloured
+        via `BAR_COLOURS[key]`.
 
         Persistent (long TTL) rather than fading like pillage lines — the
-        caller re-renders on every ShipLocker sync to keep it current, so a
-        quiet stretch just means a slightly stale (not blank) reading until
-        the next transfer.
+        caller re-renders after every journal event to keep it current, so a
+        quiet stretch just means a slightly stale (not blank) reading.
+
+        A key from a previous call that's absent from `rows` (the commander
+        toggled that bar off in Settings, or it's a conditional bar - Carrier
+        Locker/Cargo - no longer applicable) is actively cleared rather than
+        left showing a stale value; passing an empty list clears everything.
         """
-        if not self._bars_enabled:
+        if self._bars_broken:
             return
 
         client = self._connect()
@@ -170,15 +188,17 @@ class PillageOverlay:
         base_y = self._origin_y + MAX_LINES * LINE_HEIGHT + CAPACITY_BAR_GAP
         bar_x = self._origin_x + CAPACITY_LABEL_WIDTH
 
-        for row, category in enumerate(TRACKED_CATEGORIES):
-            if category not in values:
-                continue
-            label, total, capacity, colour = values[category]
-            row_y = base_y + row * CAPACITY_ROW_HEIGHT
+        visible = [row for row in rows if row[0] in BAR_ORDER]
+        drawn_keys = set()
 
-            self._send_text(client, f"label-{category}", label, self._origin_x, row_y, colour=colour)
+        for display_row, (key, label, total, capacity) in enumerate(visible):
+            colour = BAR_COLOURS.get(key, COLOUR)
+            row_y = base_y + display_row * CAPACITY_ROW_HEIGHT
+            drawn_keys.add(key)
+
+            self._send_text(client, f"label-{key}", label, self._origin_x, row_y, colour=colour)
             self._send_shape(
-                client, f"track-{category}", "rect",
+                client, f"track-{key}", "rect",
                 colour=CAPACITY_TRACK_COLOUR, fill="",
                 x=bar_x, y=row_y, w=CAPACITY_BAR_WIDTH, h=CAPACITY_BAR_HEIGHT,
                 thickness=1,
@@ -188,31 +208,35 @@ class PillageOverlay:
             fill_width = max(1, round(CAPACITY_BAR_WIDTH * fraction)) if total > 0 else 0
             if fill_width > 0:
                 self._send_shape(
-                    client, f"fill-{category}", "rect",
+                    client, f"fill-{key}", "rect",
                     colour=colour, fill=colour,
                     x=bar_x, y=row_y, w=fill_width, h=CAPACITY_BAR_HEIGHT,
                 )
             else:
-                self._send_clear(client, f"fill-{category}")
+                self._send_clear(client, f"fill-{key}")
 
             value_text = f"{total}/{capacity}" if capacity else str(total)
             self._send_text(
-                client, f"value-{category}", value_text,
+                client, f"value-{key}", value_text,
                 bar_x + CAPACITY_BAR_WIDTH + CAPACITY_VALUE_GAP, row_y - 3,
                 colour=colour,
             )
 
-        self._bars_rendered = True
-
-    def clear_capacity_bars(self) -> None:
-        client = self._client
-        if client is None or not self._bars_rendered:
-            self._bars_rendered = False
-            return
-        for category in TRACKED_CATEGORIES:
+        for key in self._rendered_bar_keys - drawn_keys:
             for part in ("label", "track", "fill", "value"):
-                self._send_clear(client, f"{part}-{category}")
-        self._bars_rendered = False
+                self._send_clear(client, f"{part}-{key}")
+
+        self._rendered_bar_keys = frozenset(drawn_keys)
+
+    def clear_bars(self) -> None:
+        client = self._client
+        if client is None or not self._rendered_bar_keys:
+            self._rendered_bar_keys = frozenset()
+            return
+        for key in self._rendered_bar_keys:
+            for part in ("label", "track", "fill", "value"):
+                self._send_clear(client, f"{part}-{key}")
+        self._rendered_bar_keys = frozenset()
 
     def clear(self) -> None:
         client = self._client
@@ -306,7 +330,7 @@ class PillageOverlay:
             self._client = None
             self._enabled = False
         else:
-            self._bars_enabled = False
+            self._bars_broken = True
 
     def _connect(self) -> Optional[Any]:
         if self._client is not None:

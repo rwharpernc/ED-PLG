@@ -24,7 +24,7 @@ That total is the number that matters when you are deciding whether a pickup is 
 - **Pillage notifications** on every pickup, with your new combined total — wording, a pickup sound, and which categories announce at all are all configurable
 - **Collapsible main panel** — click the title to collapse the ED-PLG panel down to a single status line, or expand it back out; EDMC remembers your choice
 - **At-a-glance capacity bars** on the main panel for Backpack, Ship Locker, and Carrier Locker, plus a fourth bar that tracks your current vehicle's cargo hold (ship, or SRV when deployed) — click any bar to open the full inventory window
-- **In-game overlay alerts** via [EDMCModernOverlay](https://github.com/SweetJonnySauce/EDMCModernOverlay) (optional — the plugin works fine without it)
+- **In-game overlay alerts** via [EDMCModernOverlay](https://github.com/SweetJonnySauce/EDMCModernOverlay) (optional — the plugin works fine without it), including any of the main panel's four inventory bars, individually toggleable and colour-matched to the panel
 - **Inventory window** — a tabbed view of everything you hold, with capacity bars per category, so you can see at a glance how close your backpack is to full
 - **Ship locker capacity warning** — an in-game overlay alert when a ship locker category hits 90% full, so you're not caught having to drop loot before you can offload it (at your ship, or remotely via an Apex shuttle)
 - **Real names** for Frontier's internal resource IDs (`manufacturinginstructions` → *Manufacturing Instructions*), covering essentially every Odyssey microresource via a table imported from [EDCD/FDevIDs](https://github.com/EDCD/FDevIDs)
@@ -149,13 +149,15 @@ Every ED-PLG message uses the `edplg-` ID prefix, which means you can reposition
 
 If the overlay throws an error at any point, ED-PLG disables it for the session rather than letting it break inventory tracking. Tracking is the job; the overlay is a nicety.
 
-### Ship locker capacity bars
+### Overlay inventory bars
 
-**File → Settings → ED-PLG**'s **"Show ship locker capacity bars on the overlay"** (off by default) draws a small persistent panel below the pillage stack — one row per category (Assets/Goods/Data), each a bar and a `total/1000` reading in that category's colour — so you can see how full your ship locker is without opening the inventory window. It redraws whenever your ship locker changes, and stays up between updates rather than fading like a pillage line.
+**File → Settings → ED-PLG** has a checkbox for each of the main panel's four bars — **Backpack**, **Ship Locker**, **Carrier Locker**, **Cargo** — all off by default. Checking one draws that bar as a small persistent element below the pillage stack, colour-matched to the main panel (Backpack blue, Ship Locker green, Carrier Locker violet, Cargo orange), with the same `used/capacity` reading. Each redraws whenever anything relevant changes, and stays up between updates rather than fading like a pillage line.
+
+Carrier Locker and Cargo only actually draw when they'd also show on the main panel — Carrier Locker needs a confirmed fleet carrier, Cargo needs a ship/SRV cargo hold to apply (hidden on foot) — checking their overlay boxes just means "show it when it's relevant," same as the panel.
 
 ### ModernOverlay panel (experimental)
 
-If you're running EDMCModernOverlay specifically (not the older EDMCOverlay), ED-PLG makes a best-effort attempt to register its own panel group — a background box behind the pillage stack and capacity bars, anchored to a screen corner via **"Overlay panel anchor"** in Settings (nw/n/ne/w/center/e/sw/s/se; default `ne`) — instead of relying only on the raw X/Y position. This uses an internal ModernOverlay API that hasn't been confirmed working end-to-end yet; if it doesn't do anything visible, ED-PLG still draws everything exactly as it would without it, just without the background panel. The anchor field is greyed out unless ModernOverlay is detected.
+If you're running EDMCModernOverlay specifically (not the older EDMCOverlay), ED-PLG makes a best-effort attempt to register its own panel group — a background box behind the pillage stack and inventory bars, anchored to a screen corner via **"Overlay panel anchor"** in Settings (nw/n/ne/w/center/e/sw/s/se; default `ne`) — instead of relying only on the raw X/Y position. This uses an internal ModernOverlay API that hasn't been confirmed working end-to-end yet; if it doesn't do anything visible, ED-PLG still draws everything exactly as it would without it, just without the background panel. The anchor field is greyed out unless ModernOverlay is detected.
 
 ### Muting a category's notifications
 
@@ -180,7 +182,7 @@ Both apply to the log line, panel status, and the message EDMC records as the "l
 | Pillage message | Built-in default | `{item}`/`{total}` template; see [Notification settings](#notification-settings) above |
 | Play a sound on pickup | **Off** | Windows-only; see [Notification settings](#notification-settings) above |
 | Show pillage notifications on the in-game overlay | On | Greyed out when no overlay plugin is installed |
-| Show ship locker capacity bars on the overlay | **Off** | See [Ship locker capacity bars](#ship-locker-capacity-bars) above |
+| Show \[Backpack / Ship Locker / Carrier Locker / Cargo\] bar on the overlay | **All off** | One checkbox per bar; see [Overlay inventory bars](#overlay-inventory-bars) above |
 | Overlay panel anchor | `ne` | ModernOverlay only, greyed out otherwise; see [ModernOverlay panel](#modernoverlay-panel-experimental) above |
 | Overlay position (X / Y) | 900 / 120 | See [Overlay notifications](#overlay-notifications) above |
 | Announce pickups for (Assets/Goods/Data) | All on | See [Muting a category's notifications](#muting-a-categorys-notifications) above |
@@ -349,7 +351,7 @@ Dependencies point one way: `load.py` knows about everything; `ui.py` does not i
 
 **Auto-update is off by default, but can still overwrite a local test install if you've turned it on for that copy.** A plugin folder dropped into your EDMC plugins directory for testing looks, to `update.py`, exactly like a real install - if "Automatically download updates" is enabled there and the local build is older than the latest GitHub Release, EDMC will download and stage that release over your hand-edited files on its next restart. Drop an empty `disable-auto-update.txt` file in the plugin folder to override the checkbox unconditionally if you want it on elsewhere while still hand-editing this copy.
 
-The tracker, names, suit, cargo, overlay, sound, and window modules can all be exercised **outside EDMC** by stubbing the `config` and `theme` modules in `sys.modules` and replaying real journal lines through the tracker — useful, since the alternative is flying to a settlement to test a one-line change.
+The tracker, names, suit, cargo, overlay, sound, and window modules can all be exercised **outside EDMC** by stubbing the `config` and `theme` modules in `sys.modules` and replaying real journal lines through the tracker — useful, since the alternative is flying to a settlement to test a one-line change. Testing `overlay.py`'s bar/pillage rendering itself additionally needs a fake `edmcoverlay` module (an `Overlay` class recording `send_message`/`send_shape`/`send_raw` calls into a list) so a test can assert on exactly what was sent.
 
 See the [Technical Specification](docs/tech-spec.md) for the full API surface, event schemas, and handler behaviour.
 
