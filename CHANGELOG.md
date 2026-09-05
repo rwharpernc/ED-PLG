@@ -21,23 +21,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   confirmed for that commander*, and a fourth Cargo bar (orange, see below)
   — clicking any bar opens the inventory window, replacing the old
   **Inventory** button (a hint line - "Click Inventory Bar to Open
-  Inventory Panel" - was added below the bars once it became clear the
-  button's removal wasn't obviously discoverable). Bars are drawn on a
-  plain `tk.Canvas` rather than `ttk.Progressbar`, after the latter
-  rendered as an oversized, unthemed white box under EDMC's theming.
+  Inventory Panel" - sits below the bars, since the button's removal
+  wasn't obviously discoverable on its own). Bars are drawn on a plain
+  `tk.Canvas` rather than `ttk.Progressbar`, after the latter rendered as
+  an oversized, unthemed white box under EDMC's theming.
+
   Getting the bar track colour actually correct under Dark theme took
-  several passes: `theme.active`/`theme.THEME_DEFAULT` (mirroring EDMMM)
-  silently evaluated as "always light"; reading a Frame's or a Label's own
+  several passes, the first few plausible-looking but wrong:
+  `theme.active`/`theme.THEME_DEFAULT` (mirroring EDMMM) silently
+  evaluated as "always light"; reading a Frame's or a Label's own
   background back both assumed EDMC's `theme.update()` had already
-  recoloured that specific widget by the time we asked; reading
-  `theme.current['background']` directly sidesteps that but is still
-  showing white in the field as of this writing, so `_bar_track_color()`
-  now also logs a one-time diagnostic line (`theme.current=...`) to pin
-  down what's actually happening at that point in a real session, and
-  `create_plugin_app` now recurses `theme.update()` through the *entire*
-  widget subtree itself (EDMC's own `update()` only walks one level of
-  children, confirmed from its source - nowhere near deep enough for this
-  panel's nested frame/row/label/canvas structure).
+  recoloured that specific widget by the time we asked. A diagnostic log
+  line finally confirmed the real cause directly from a live session:
+  `theme.current` (the dict EDMC's own theming populates) was still
+  **empty** a full second after `plugin_start3` on a real Dark-theme
+  install - EDMC hadn't finished applying its own theme yet by the time
+  this plugin's panel first drew its bars, and nothing ever prompted a
+  redraw once it did (the next redraw only happens on a journal event,
+  which has no relationship to theme timing). `create_plugin_app` now
+  schedules a handful of retries (0.5s/1.5s/3s/6s via `root.after()`) that
+  recolour the bars from their last-known data without needing a fresh
+  journal event, so a slow theme-apply can no longer strand them
+  permanently on their pre-theme guess. Also recurses `theme.update()`
+  through this panel's entire widget subtree at creation (EDMC's own
+  `update()` only walks one level of children, confirmed from its source -
+  not deep enough for this panel's nested frame/row/label/canvas
+  structure), for whatever it's independently worth.
 - **Ship & SRV cargo-hold tracking (scope extension).** A new `cargo.py`
   module tracks which vehicle (ship, on foot, or SRV) the commander
   currently occupies from `Embark`/`Disembark`/`LaunchSRV`/`DockSRV` journal

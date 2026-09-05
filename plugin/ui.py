@@ -118,6 +118,9 @@ _last_event_label: Optional[tk.Label] = None
 _version_label: Optional[HyperlinkLabel] = None
 _on_show_inventory: Optional[Callable[[], None]] = None
 _bar_rows: Dict[str, Dict[str, tk.Widget]] = {}
+_last_rows: List[BarRow] = []
+"""Most recent rows passed to set_inventory_levels - replayed by
+_redraw_bars_only() to recolour bars without needing fresh journal data."""
 _panel_collapsed: bool = False
 _overlay_var: Optional[tk.BooleanVar] = None
 _overlay_x_var: Optional[tk.StringVar] = None
@@ -135,8 +138,17 @@ _override_defaults: Dict[Tuple[str, str], Optional[int]] = {}
 _version_state: tuple = ("normal", None)
 _updated_clear_scheduled: bool = False
 
-_theme_debug_logged: bool = False
-"""Guards the one-time diagnostic log line in _bar_track_color() - see there."""
+_theme_debug_log_count: int = 0
+_THEME_DEBUG_LOG_LIMIT = 60
+# Generous: _bar_track_color() is called once per bar (up to 4) on every
+# initial draw, every scheduled retry (see create_plugin_app), and every
+# journal event, so a small limit would exhaust itself before the later
+# retries - the ones actually likely to show EDMC's theme having caught up
+# - ever get a chance to log.
+"""Caps the diagnostic logging in _bar_track_color() - see there. Bounded
+rather than one-shot so the log can show whether/when theme.current
+transitions from empty to populated across the staggered redraw retries in
+create_plugin_app, not just its state at the very first call."""
 
 
 def _theme_update_deep(widget: tk.Misc) -> None:
@@ -237,6 +249,16 @@ def create_plugin_app(
     for key, widgets in _bar_rows.items():
         _draw_bar(widgets["bar"], 0, None, BAR_COLOURS.get(key, _BAR_DEFAULT_COLOUR))
 
+    # None of the above is guaranteed to land *after* EDMC has actually
+    # applied its own theme (theme.current has been observed still empty a
+    # full second after plugin_start3 on a real Dark-theme install) - a bar
+    # drawn before that finishes is stuck showing the wrong colour forever,
+    # since nothing else would prompt a redraw until the next journal event.
+    # Retry a few times over the following seconds so a slow theme-apply
+    # can't permanently strand the bars on their pre-theme guess.
+    for delay_ms in (500, 1500, 3000, 6000):
+        _frame.after(delay_ms, _redraw_bars_only)
+
     return _frame
 
 
@@ -270,7 +292,7 @@ def _bar_track_color() -> str:
     background only if theme.current isn't populated yet (e.g. reading it
     before EDMC's own theme.apply() has ever run at all).
     """
-    global _theme_debug_logged
+    global _theme_debug_log_count
 
     base = None
     current_snapshot = None
@@ -294,11 +316,12 @@ def _bar_track_color() -> str:
     # call - so _frame works even when there's no Label to read from yet.
     resolver = reference or _frame
     if not base or resolver is None:
-        if not _theme_debug_logged:
-            _theme_debug_logged = True
+        if _theme_debug_log_count < _THEME_DEBUG_LOG_LIMIT:
+            _theme_debug_log_count += 1
             logger.info(
-                "Bar track colour diagnostic: theme.current=%r, resolved base=%r, "
+                "Bar track colour diagnostic [%d/%d]: theme.current=%r, resolved base=%r, "
                 "used_fallback_label=%s, resolver=%r -> falling back to static light",
+                _theme_debug_log_count, _THEME_DEBUG_LOG_LIMIT,
                 current_snapshot, base, used_fallback_label, resolver,
             )
         return _BAR_TRACK_LIGHT
@@ -317,11 +340,12 @@ def _bar_track_color() -> str:
 
     result = f"#{shift(red):02x}{shift(green):02x}{shift(blue):02x}"
 
-    if not _theme_debug_logged:
-        _theme_debug_logged = True
+    if _theme_debug_log_count < _THEME_DEBUG_LOG_LIMIT:
+        _theme_debug_log_count += 1
         logger.info(
-            "Bar track colour diagnostic: theme.current=%r, resolved base=%r, "
+            "Bar track colour diagnostic [%d/%d]: theme.current=%r, resolved base=%r, "
             "used_fallback_label=%s, luminance=%.1f -> track=%s",
+            _theme_debug_log_count, _THEME_DEBUG_LOG_LIMIT,
             current_snapshot, base, used_fallback_label, luminance, result,
         )
 
@@ -411,6 +435,12 @@ def set_inventory_levels(rows: List[BarRow]) -> None:
     with no vehicle (see cargo.VehicleState.cargo_bar) - has its row hidden
     entirely rather than left stale or shown as an empty/zero reading.
     """
+    global _last_rows
+    _last_rows = list(rows)
+    _apply_inventory_levels(rows)
+
+
+def _apply_inventory_levels(rows: List[BarRow]) -> None:
     if not _bar_rows:
         return
 
@@ -432,6 +462,26 @@ def set_inventory_levels(rows: List[BarRow]) -> None:
         widgets["value"]["text"] = f"{total}/{capacity}" if capacity else str(total)
         _draw_bar(widgets["bar"], total, capacity, BAR_COLOURS.get(key, _BAR_DEFAULT_COLOUR))
         row.grid()
+
+
+def _redraw_bars_only() -> None:
+    """
+    Recompute and redraw every bar's colours from the last-known data,
+    without waiting for a new journal event.
+
+    EDMC applies its theme (populating theme.current) at some point during
+    its own startup that isn't synchronised with plugin loading in any way
+    this plugin can hook directly - the diagnostic in _bar_track_color has
+    shown theme.current still empty a full second after plugin_start3, on a
+    real Dark-theme install. A bar drawn before that finishes is stuck
+    showing whatever (wrong) colour it computed at the time forever, since
+    nothing would otherwise prompt a redraw until the next journal event
+    happens to fire. create_plugin_app schedules a few calls to this via
+    root.after() specifically to give EDMC's theme a chance to catch up.
+    """
+    if _frame is None or not _frame.winfo_exists():
+        return
+    _apply_inventory_levels(_last_rows)
 
 
 def _update_header_text() -> None:

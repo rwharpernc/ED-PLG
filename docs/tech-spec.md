@@ -599,21 +599,29 @@ has run, `create_plugin_app` redraws every bar once more immediately after
 that call, so the very first paint already reflects the real background
 rather than the pre-theme default.
 
-**Still under investigation as of this writing**: the `theme.current`-direct
-read described above is, on paper, correct and independent of any of this
-plugin's own widget state — but still reported as producing white/light bars
-under a real Dark-theme EDMC install. Two changes landed to help pin this
-down without more guessing: `_theme_update_deep(widget)` recurses
-`theme.update()` through the *entire* widget subtree (confirmed from EDMC's
-actual `theme.py` source that its own `update()` only walks one level of
-`winfo_children()` — nowhere near deep enough for `_frame`'s
-frame→frame→row→label/canvas nesting, so most of this panel's widgets were
-likely never being registered or recoloured by the single top-level call
-this used previously); and `_bar_track_color()` now logs a one-time
-diagnostic line (`theme.current=...`, resolved `base`, whether it fell back
-to a Label, the computed track) via the standard logger, to capture what's
-actually happening in a real session rather than in this plugin's own
-(necessarily simplified) test stubs. Bar/label
+**Confirmed root cause** (via the diagnostic log line below, on a real
+Dark-theme install): `theme.current` was still **empty** a full second after
+`plugin_start3` — EDMC hadn't finished applying its own theme by the time
+this plugin's panel first drew its bars. `_bar_track_color()`'s
+`theme.current`-direct read is correct once that dict is actually populated;
+the bug was that nothing ever prompted a *second* draw once EDMC's theme
+did catch up — the only other trigger is a journal event, which has no
+relationship to theme-apply timing, so a bar drawn during that startup
+window was stuck showing its wrong guess indefinitely. `create_plugin_app`
+now schedules `_redraw_bars_only()` via `root.after()` at 500ms, 1.5s, 3s,
+and 6s after creation - each replays `_last_rows` (the most recent
+`set_inventory_levels()` call, cached at module level) through
+`_apply_inventory_levels()`, recolouring every bar from its last-known data
+without waiting for a fresh journal event. `_theme_update_deep(widget)`
+additionally recurses `theme.update()` through the panel's *entire* widget
+subtree at creation - confirmed from EDMC's actual `theme.py` source that
+its own `update()` only walks one level of `winfo_children()`, not deep
+enough for `_frame`'s frame→frame→row→label/canvas nesting - independently
+useful even though it wasn't the cause of this particular bug.
+`_bar_track_color()` still logs a bounded number of diagnostic lines
+(`theme.current=...`, resolved `base`, `used_fallback_label`) via the
+standard logger; kept in place in case a differently-timed environment
+still shows a gap the retries above don't cover. Bar/label
 widths (`_BAR_NAME_WIDTH`, `_BAR_VALUE_WIDTH`, `_BAR_WIDTH`) are fixed
 regardless of label length or count magnitude, per this developer's standing
 rule that nothing in a `plugin_app` frame may let variable content widen
