@@ -511,16 +511,39 @@ set_update_applied(version: str) -> None
 `create_plugin_app` builds a header row (title + status, always visible, click
 anywhere to toggle collapse) and a content frame (the bars, last-event line,
 version line) that's `grid_remove()`d entirely while collapsed —
-`edplg_panel_collapsed` persists the choice. `set_inventory_levels` updates the
-four bar rows (`BAR_ORDER = ("backpack", "ship_locker", "fleet_carrier_locker",
-"cargo")`) from `load.py`'s `_refresh_panel_bars`; a key omitted from `rows`
-(only ever `"cargo"`, while on foot with no vehicle) has its row hidden via
-`pack_forget()` rather than left showing a stale value. Every bar row is bound
-to `on_show_inventory` — there is no separate button. Bar/label widths
-(`_BAR_NAME_WIDTH`, `_BAR_VALUE_WIDTH`, `_BAR_LENGTH`) are fixed regardless of
-label length or count magnitude, per this developer's standing rule that
-nothing in a `plugin_app` frame may let variable content widen EDMC's main
-window.
+`edplg_panel_collapsed` persists the choice. `PANEL_TITLE` is the spelled-out
+name plus abbreviation (`"Pillage Ledger & Gear-tracker (ED-PLG)"`), matching
+the title-line convention this developer uses across their other EDMC
+plugins.
+
+`set_inventory_levels` updates the four bar rows (`BAR_ORDER = ("backpack",
+"ship_locker", "fleet_carrier_locker", "cargo")`) from `load.py`'s
+`_refresh_panel_bars`. A key omitted from `rows` — `"fleet_carrier_locker"`
+while no fleet carrier is confirmed for this commander, or `"cargo"` while on
+foot with no vehicle — has its row hidden via `grid_remove()` rather than
+left showing a stale or zeroed value; a later `grid()` (bare, no args)
+restores it to its original row index, so hiding and reshowing a row can
+never reorder the fixed `BAR_ORDER` sequence the way `pack_forget()`/`pack()`
+would (re-appending after whatever else happens to be packed at the time).
+Every bar row is bound to `on_show_inventory` — there is no separate button.
+
+Each bar is a plain `tk.Canvas` (`_BAR_WIDTH` x `_BAR_HEIGHT`), redrawn by
+`_draw_bar()` on every update: a background rectangle in the theme-appropriate
+track colour (`_bar_track_color()`, mirroring EDMMM's own light/dark track
+logic) fully covers the canvas, then a fill rectangle on top sized to
+`total/capacity` (`_BAR_FILL_COLOUR`, or `_BAR_FULL_COLOUR` red at or over
+capacity). This replaced an earlier `ttk.Progressbar`-based implementation
+that rendered as an oversized, unthemed white box in practice — a `ttk`
+widget's native theme chrome doesn't reliably follow EDMC's `theme.update()`
+walk the way plain `tk` widgets do, whereas a canvas's own explicit
+background plus fully-covering rectangles look correct regardless. Bar/label
+widths (`_BAR_NAME_WIDTH`, `_BAR_VALUE_WIDTH`, `_BAR_WIDTH`) are fixed
+regardless of label length or count magnitude, per this developer's standing
+rule that nothing in a `plugin_app` frame may let variable content widen
+EDMC's main window. Bar rows are `grid()`-ed with `sticky="w"` (natural
+content width) rather than stretched to fill the panel, so no row ever
+exposes a large blank trailing area to whatever background happens to sit
+behind it.
 
 Uses `theme.update(frame)` for EDMC dark/light theme consistency. `ui.py` does not
 import `load.py`; opening the inventory window from a bar click is wired via the
@@ -570,15 +593,28 @@ Config keys:
 bars both track state even if a handler raises, and stay current after *any*
 event rather than only the ones each function's own branch handles.
 
-`_refresh_panel_bars(state)` builds the four `(key, label, total, capacity)`
+`_refresh_panel_bars(state)` builds up to four `(key, label, total, capacity)`
 rows described in §6.6 from `_tracker.snapshot()`, `_suit.capacities()`, and
 `_vehicle.cargo_bar(state)` (see §6.9), and passes them to
 `ui.set_inventory_levels()`. The backpack row's capacity is `None` unless
 `_suit.capacities()` has an entry for every `TRACKED_CATEGORIES` member (a
 partial suit-capacity table would otherwise understate the true capacity).
-`_on_commander_session()` calls `_vehicle.reset()` before resyncing, since a
-fresh journal file replays its own Embark/LaunchSRV history from scratch and
-any vehicle state carried over from a previous session would otherwise be stale.
+The `fleet_carrier_locker` row is included only when
+`_tracker.fleet_carrier_callsign` is set - real CAPI locker data has been
+seen for this commander - rather than unconditionally at 0; see §6.6's
+carrier-gating note for why an unset callsign is a reliable enough "no
+carrier" signal. `_on_commander_session()` calls `_vehicle.reset()` before
+resyncing, since a fresh journal file replays its own Embark/LaunchSRV
+history from scratch and any vehicle state carried over from a previous
+session would otherwise be stale.
+
+`journal_entry()` also caches its `state` argument into module-level
+`_last_state` before dispatching. `capi_fleetcarrier()` - a separate EDMC
+callback invoked asynchronously on its own, with no `state` parameter of its
+own - calls `_refresh_panel_bars(_last_state)` after applying (or clearing)
+carrier data for the active commander, using that cached value; without this
+the Carrier Locker row would only appear (or update) on the *next* journal
+event after CAPI data actually arrived, rather than as soon as it does.
 
 Pillage message format:
 

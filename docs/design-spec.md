@@ -80,21 +80,39 @@ treatment as other panels in this developer's plugin lineup):
 
 | Element | Content |
 |---------|---------|
-| Title | `▾ ED-PLG:` (arrow flips to `▸` when collapsed) — click anywhere on the row to toggle |
+| Title | `▾ Pillage Ledger & Gear-tracker (ED-PLG):` (arrow flips to `▸` when collapsed) — click anywhere on the row to toggle. Spelled-out-name-plus-abbreviation, matching the title-line convention used across this developer's other EDMC plugins (e.g. EDMMM's "My Mission Manager (EDMMM)"). |
 | Status | Current sync state (e.g. "Inventory synced", "+2 item(s) pillaged") |
 
 Everything below the header collapses/expands together:
 
 | Element | Content |
 |---------|---------|
-| Inventory bars | One row each for Backpack, Ship Locker, Carrier Locker, and (when a vehicle applies — §12) Cargo; each shows a fixed-width label, a fixed-length progress bar (red once full), and a `used/capacity` (or bare count where capacity is unknown) reading. Clicking anywhere on a row opens the inventory window (§3.5) — there is no separate button. |
+| Inventory bars | One row each for Backpack and Ship Locker (always shown), Carrier Locker (only once a fleet carrier is confirmed for this commander), and Cargo (when a vehicle applies — §12). Each shows a fixed-width label, a fixed-width bar drawn on a plain `tk.Canvas` (red once full), and a `used/capacity` (or bare count where capacity is unknown) reading. Clicking anywhere on a row opens the inventory window (§3.5) — there is no separate button. |
 | Last event | Most recent pillage message (green text) |
+
+The Carrier Locker row is gated on `InventoryTracker.fleet_carrier_callsign`
+being set — which only happens from real Frontier CAPI locker data (see
+Technical Specification §5.5) — rather than shown unconditionally at 0: a
+commander with no fleet carrier at all
+never triggers the `CarrierBuy`/`CarrierStats` events that fetch that data in
+the first place, so "no callsign yet" reliably means "no confirmed carrier"
+for that case, at the acceptable cost of the row also staying hidden for a
+few minutes after a genuine carrier owner's session starts, until the first
+CAPI fetch lands.
 
 The UI updates only from the main EDMC thread via `journal_entry()` callbacks.
 No background threads touch Tkinter widgets. Bar/label widths are fixed
 regardless of content length or magnitude, so a long label or a large count
 can never widen EDMC's main window — see this developer's standing rule for
 `plugin_app` widgets in variable-content EDMC plugins generally.
+
+Bars are drawn on a plain `tk.Canvas` (background + fill rectangles) rather
+than a `ttk.Progressbar`: a ttk widget's native theme chrome doesn't reliably
+follow EDMC's `theme.update()` walk the way plain tk widgets do, which
+produced a visibly broken (oversized, unthemed white) bar in practice. A
+Canvas's own explicit background plus rectangles that fully cover it look
+correct under any theme regardless of that gap — the same approach this
+developer's other plugins (e.g. EDMMM) already use for their own bars.
 
 ### 3.3 Log output
 

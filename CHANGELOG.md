@@ -10,11 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Collapsible main panel with at-a-glance inventory bars.** The panel
-  title is now a click-to-collapse header (arrow + `ED-PLG:` + live status),
-  collapsing down to that one line and remembering the choice across
-  restarts. Expanded, it shows a bar each for Backpack, Ship Locker, and
-  Carrier Locker, plus a fourth Cargo bar (see below) — clicking any bar
-  opens the inventory window, replacing the old **Inventory** button.
+  title is now a click-to-collapse header (arrow + spelled-out name +
+  abbreviation, e.g. `▾ Pillage Ledger & Gear-tracker (ED-PLG):` — matching
+  the title-line convention used across this developer's other EDMC
+  plugins), collapsing down to that one line and remembering the choice
+  across restarts. Expanded, it shows a bar each for Backpack and Ship
+  Locker, a Carrier Locker bar *only once a fleet carrier is confirmed for
+  that commander*, and a fourth Cargo bar (see below) — clicking any bar
+  opens the inventory window, replacing the old **Inventory** button. Bars
+  are drawn on a plain `tk.Canvas` rather than `ttk.Progressbar`, after the
+  latter rendered as an oversized, unthemed white box under EDMC's theming.
 - **Ship & SRV cargo-hold tracking (scope extension).** A new `cargo.py`
   module tracks which vehicle (ship, on foot, or SRV) the commander
   currently occupies from `Embark`/`Disembark`/`LaunchSRV`/`DockSRV` journal

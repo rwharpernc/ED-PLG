@@ -58,6 +58,11 @@ _sound = PillageSound()
 _suit = SuitState()
 _vehicle = VehicleState()
 _ui_frame: Optional[tk.Frame] = None
+_last_state: Dict[str, Any] = {}
+"""Most recent journal_entry() state dict, cached so capi_fleetcarrier() -
+called separately from journal_entry(), with no state of its own - can still
+refresh the main-panel bars (see _refresh_panel_bars) when CAPI data arrives
+asynchronously, rather than only on the next journal event."""
 _updater: Optional[UpdateManager] = None
 """Kept alive purely so the background check thread's bound method holds a
 live reference for its lifetime - not read again after plugin_start3."""
@@ -147,6 +152,8 @@ def journal_entry(
     state: Dict[str, Any],
 ) -> Optional[str]:
     """Handle journal events for Odyssey inventory tracking."""
+    global _last_state
+    _last_state = state
     try:
         return _dispatch(cmdr, entry, state)
     finally:
@@ -246,6 +253,7 @@ def capi_fleetcarrier(data: CAPIData) -> Optional[str]:
         )
         if request_cmdr == _tracker.commander:
             ui.set_status(f"No carrier locker ({request_cmdr})")
+            _refresh_panel_bars(_last_state)
         return None
 
     stack_count = _tracker.apply_fleet_carrier_locker(
@@ -272,6 +280,7 @@ def capi_fleetcarrier(data: CAPIData) -> Optional[str]:
         stack_count,
     )
     ui.set_status(f"Carrier locker synced ({label}, {stack_count} stacks)")
+    _refresh_panel_bars(_last_state)
     return None
 
 
@@ -357,13 +366,20 @@ def _refresh_panel_bars(state: Dict[str, Any]) -> None:
             sum(sum(items.values()) for items in snapshot["ship_locker"].values()),
             sum(SHIP_LOCKER_CAPACITY.values()),
         ),
-        (
+    ]
+
+    # Only show carrier data once we actually know this commander owns a
+    # carrier - fleet_carrier_callsign is set from real CAPI locker data (see
+    # InventoryTracker.apply_fleet_carrier_locker) and cleared for anyone who
+    # doesn't, so its presence is a reliable "carrier confirmed" signal rather
+    # than a fresh commander simply not having a carrier at all.
+    if _tracker.fleet_carrier_callsign:
+        rows.append((
             "fleet_carrier_locker",
             "Carrier Locker",
             sum(sum(items.values()) for items in snapshot["fleet_carrier_locker"].values()),
             None,
-        ),
-    ]
+        ))
 
     cargo_row = _vehicle.cargo_bar(state)
     if cargo_row is not None:

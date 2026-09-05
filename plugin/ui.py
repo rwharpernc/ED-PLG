@@ -9,7 +9,6 @@ from typing import Callable, Dict, FrozenSet, List, Optional, Tuple
 
 import tkinter as tk
 from tkinter import font as tkfont
-from tkinter import ttk
 
 import myNotebook as nb
 from config import appname, config
@@ -34,12 +33,14 @@ CONFIG_MESSAGE_FORMAT = "edplg_message_format"
 CONFIG_PANEL_COLLAPSED = "edplg_panel_collapsed"
 
 # Main-panel section title, echoed in the collapsible header (see
-# _update_header_text) the same way EDMMM titles its own collapsible panel.
-PANEL_TITLE = "ED-PLG"
+# _update_header_text) - spelled-out name + abbreviation in parens, the same
+# title-line convention as this developer's other EDMC plugins (e.g. EDMMM's
+# "My Mission Manager (EDMMM)").
+PANEL_TITLE = "Pillage Ledger & Gear-tracker (ED-PLG)"
 
-# Fixed order of the main-panel inventory bars. "cargo" is location-dependent
-# (see cargo.py) and its row is grid_remove()'d entirely while on foot with
-# no vehicle - the other three are always shown.
+# Fixed order of the main-panel inventory bars. "fleet_carrier_locker" and
+# "cargo" are conditional - see set_inventory_levels - and grid_remove()'d
+# entirely when absent from the update rather than shown empty/stale.
 BAR_ORDER: Tuple[str, ...] = ("backpack", "ship_locker", "fleet_carrier_locker", "cargo")
 BAR_DEFAULT_LABELS: Dict[str, str] = {
     "backpack": "Backpack",
@@ -49,14 +50,21 @@ BAR_DEFAULT_LABELS: Dict[str, str] = {
 
 # Bar widget geometry - fixed pixel/character widths so a long label or a
 # large count can never widen EDMC's main window (see the plugin_app sizing
-# note in this repo's global instructions).
+# note in this repo's global instructions). Bars are drawn on a plain
+# tk.Canvas rather than ttk.Progressbar - same approach as EDMMM's own
+# progress bars (see its _progress_bar) - because a ttk widget's native theme
+# chrome doesn't reliably follow EDMC's theme.update() the way plain tk
+# widgets do, and a Canvas's own explicit background plus fully-covering
+# rectangles sidestep that regardless of the active theme.
 _BAR_NAME_WIDTH = 13
 _BAR_VALUE_WIDTH = 13
-_BAR_LENGTH = 90
+_BAR_WIDTH = 80
+_BAR_HEIGHT = 8
 
-STYLE_PANEL_BAR = "EDPLG.Panel.Horizontal.TProgressbar"
-STYLE_PANEL_BAR_FULL = "EDPLG.PanelFull.Horizontal.TProgressbar"
-_PANEL_BAR_FULL_COLOUR = "#c0392b"
+_BAR_FILL_COLOUR = "#4fc3f7"
+_BAR_FULL_COLOUR = "#c0392b"
+_BAR_TRACK_LIGHT = "#c0c4c7"
+_BAR_TRACK_DARK = "#3c4043"
 
 # (key, label, total, capacity_or_None) for one main-panel bar row.
 BarRow = Tuple[str, str, int, Optional[int]]
@@ -134,8 +142,6 @@ def create_plugin_app(
     _frame = tk.Frame(parent)
     _frame.columnconfigure(0, weight=1)
 
-    _configure_bar_styles(_frame)
-
     header = tk.Frame(_frame, cursor="hand2")
     header.grid(row=0, column=0, sticky=tk.EW)
     header.bind("<Button-1>", lambda _e: _toggle_collapsed())
@@ -182,29 +188,70 @@ def _bold_font(_widget: tk.Misc) -> Tuple[str, int, str]:
         return ("TkDefaultFont", 9, "bold")
 
 
-def _configure_bar_styles(widget: tk.Misc) -> None:
-    style = ttk.Style(widget)
-    style.configure(STYLE_PANEL_BAR, thickness=8)
-    style.configure(STYLE_PANEL_BAR_FULL, thickness=8, background=_PANEL_BAR_FULL_COLOUR)
+def _is_dark_theme() -> bool:
+    """True for EDMC's Dark/Transparent themes (near-black background), as
+    opposed to Default (light system colors) - mirrors the same check in
+    this developer's other EDMC plugins (e.g. EDMMM)."""
+    try:
+        return theme.active not in (None, theme.THEME_DEFAULT)
+    except AttributeError:
+        return False
+
+
+def _bar_track_color() -> str:
+    return _BAR_TRACK_DARK if _is_dark_theme() else _BAR_TRACK_LIGHT
+
+
+def _draw_bar(canvas: tk.Canvas, total: int, capacity: Optional[int]) -> None:
+    """(Re)draw one bar's track + fill rectangles, fully covering the canvas
+    so nothing of the canvas's own background - or anything behind it - is
+    ever visible, regardless of the active theme."""
+    canvas.delete("all")
+    track = _bar_track_color()
+    canvas.configure(background=track)
+    canvas.create_rectangle(0, 0, _BAR_WIDTH, _BAR_HEIGHT, fill=track, outline="")
+
+    if not capacity:
+        return
+
+    fraction = max(0.0, min(1.0, total / capacity))
+    if fraction <= 0:
+        return
+
+    colour = _BAR_FULL_COLOUR if total >= capacity else _BAR_FILL_COLOUR
+    canvas.create_rectangle(0, 0, max(1, round(_BAR_WIDTH * fraction)), _BAR_HEIGHT, fill=colour, outline="")
 
 
 def _build_bars(parent: tk.Frame) -> None:
-    """Create (but do not populate) one row per BAR_ORDER entry. Each row is
-    click-to-open-inventory, same as the button it replaces."""
+    """
+    Create (but do not populate) one row per BAR_ORDER entry. Each row is
+    click-to-open-inventory, same as the button it replaces.
+
+    Rows are grid()-ed (one fixed row index per key, sticky=W - natural
+    content width, never stretched to fill the panel) rather than packed:
+    grid_remove()/grid() (see set_inventory_levels) restores a hidden row to
+    its original position, where pack_forget()/pack() would instead re-append
+    it after whatever's currently packed - reordering rows whenever one is
+    hidden and later shown again (e.g. the Cargo row across a foot<->vehicle
+    transition, or Carrier Locker once a carrier is first discovered).
+    """
     global _bar_rows
 
     bars = tk.Frame(parent)
-    bars.grid(row=0, column=0, sticky=tk.EW, pady=(0, 2))
+    bars.grid(row=0, column=0, sticky=tk.W, pady=(0, 2))
     _bar_rows = {}
 
-    for key in BAR_ORDER:
+    for grid_row, key in enumerate(BAR_ORDER):
         row = tk.Frame(bars, cursor="hand2")
-        row.pack(fill=tk.X, pady=1)
+        row.grid(row=grid_row, column=0, sticky=tk.W, pady=1)
 
         name_label = tk.Label(row, text=BAR_DEFAULT_LABELS.get(key, ""), width=_BAR_NAME_WIDTH, anchor=tk.W)
         name_label.pack(side=tk.LEFT)
 
-        bar = ttk.Progressbar(row, maximum=100, length=_BAR_LENGTH, style=STYLE_PANEL_BAR)
+        bar = tk.Canvas(
+            row, width=_BAR_WIDTH, height=_BAR_HEIGHT,
+            highlightthickness=0, borderwidth=0,
+        )
         bar.pack(side=tk.LEFT, padx=(4, 4))
 
         value_label = tk.Label(row, text="", width=_BAR_VALUE_WIDTH, anchor=tk.W)
@@ -214,6 +261,7 @@ def _build_bars(parent: tk.Frame) -> None:
             widget.bind("<Button-1>", _open_inventory)
 
         _bar_rows[key] = {"row": row, "name": name_label, "bar": bar, "value": value_label}
+        _draw_bar(bar, 0, None)
 
 
 def _open_inventory(_event=None) -> None:
@@ -225,9 +273,10 @@ def set_inventory_levels(rows: List[BarRow]) -> None:
     """
     Update the main-panel bars from (key, label, total, capacity) tuples.
 
-    A key present in BAR_ORDER but absent from `rows` (only ever "cargo",
-    while on foot with no vehicle - see cargo.VehicleState.cargo_bar) has its
-    row hidden entirely rather than left stale.
+    A key present in BAR_ORDER but absent from `rows` - "fleet_carrier_locker"
+    while the commander owns no known fleet carrier, or "cargo" while on foot
+    with no vehicle (see cargo.VehicleState.cargo_bar) - has its row hidden
+    entirely rather than left stale or shown as an empty/zero reading.
     """
     if not _bar_rows:
         return
@@ -242,23 +291,14 @@ def set_inventory_levels(rows: List[BarRow]) -> None:
         row = widgets["row"]
         data = present.get(key)
         if data is None:
-            row.pack_forget()
+            row.grid_remove()
             continue
 
         label, total, capacity = data
         widgets["name"]["text"] = label
         widgets["value"]["text"] = f"{total}/{capacity}" if capacity else str(total)
-
-        bar = widgets["bar"]
-        if capacity:
-            bar["value"] = min(100, round(total * 100 / capacity))
-            bar.configure(style=STYLE_PANEL_BAR_FULL if total >= capacity else STYLE_PANEL_BAR)
-        else:
-            bar["value"] = 0
-            bar.configure(style=STYLE_PANEL_BAR)
-
-        if not row.winfo_ismapped():
-            row.pack(fill=tk.X, pady=1)
+        _draw_bar(widgets["bar"], total, capacity)
+        row.grid()
 
 
 def _update_header_text() -> None:
