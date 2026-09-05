@@ -75,7 +75,9 @@ BAR_COLOURS: Dict[str, str] = {
 _BAR_FULL_COLOUR = "#c0392b"
 _BAR_DEFAULT_COLOUR = "#9e9e9e"
 _BAR_TRACK_LIGHT = "#c0c4c7"
-_BAR_TRACK_DARK = "#3c4043"
+"""Fallback track colour if the live panel background can't be read at all
+(see _bar_track_color) - deliberately never used under a normally-running
+EDMC, just a safety net."""
 
 # (key, label, total, capacity_or_None) for one main-panel bar row.
 BarRow = Tuple[str, str, int, Optional[int]]
@@ -192,6 +194,15 @@ def create_plugin_app(
     _apply_collapsed_state()
 
     theme.update(_frame)
+
+    # Bars were first drawn (in _build_bars) before theme.update() had a
+    # chance to colour _frame - _bar_track_color() reads _frame's *current*
+    # background, so redraw now that it actually reflects the real theme,
+    # rather than leaving the initial paint stuck on the pre-theme guess
+    # until the first journal event calls set_inventory_levels().
+    for key, widgets in _bar_rows.items():
+        _draw_bar(widgets["bar"], 0, None, BAR_COLOURS.get(key, _BAR_DEFAULT_COLOUR))
+
     return _frame
 
 
@@ -204,18 +215,38 @@ def _bold_font(_widget: tk.Misc) -> Tuple[str, int, str]:
         return ("TkDefaultFont", 9, "bold")
 
 
-def _is_dark_theme() -> bool:
-    """True for EDMC's Dark/Transparent themes (near-black background), as
-    opposed to Default (light system colors) - mirrors the same check in
-    this developer's other EDMC plugins (e.g. EDMMM)."""
-    try:
-        return theme.active not in (None, theme.THEME_DEFAULT)
-    except AttributeError:
-        return False
-
-
 def _bar_track_color() -> str:
-    return _BAR_TRACK_DARK if _is_dark_theme() else _BAR_TRACK_LIGHT
+    """
+    A shade one step off the panel's actual current background - same
+    derivation window.py's _stripe_colour uses for its Treeview row shading -
+    so the track works correctly under Default, Dark, and Transparent alike
+    without needing to detect *which* theme is active.
+
+    Deliberately reads the live, already-`theme.update()`-coloured `_frame`
+    background rather than comparing `theme.active` against a `theme.
+    THEME_DEFAULT` enum value (the approach this plugin's bars used at
+    first): that comparison silently degraded to "always light" in practice
+    - the reported white bars under Dark - and reading back a widget's own
+    resolved colour can't be wrong the way guessing at an internal theme
+    constant can.
+    """
+    if _frame is None:
+        return _BAR_TRACK_LIGHT
+
+    try:
+        base = _frame.cget("background")
+        red16, green16, blue16 = _frame.winfo_rgb(base)
+    except tk.TclError:
+        return _BAR_TRACK_LIGHT
+
+    red, green, blue = red16 // 256, green16 // 256, blue16 // 256
+    luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+    delta = 24 if luminance < 128 else -20
+
+    def shift(value: int) -> int:
+        return max(0, min(255, value + delta))
+
+    return f"#{shift(red):02x}{shift(green):02x}{shift(blue):02x}"
 
 
 def _draw_bar(canvas: tk.Canvas, total: int, capacity: Optional[int], colour: str) -> None:

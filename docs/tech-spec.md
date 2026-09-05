@@ -540,9 +540,8 @@ Every bar row is bound to `on_show_inventory` — there is no separate button.
 
 Each bar is a plain `tk.Canvas` (`_BAR_WIDTH` x `_BAR_HEIGHT`), redrawn by
 `_draw_bar(canvas, total, capacity, colour)` on every update: a background
-rectangle in the theme-appropriate track colour (`_bar_track_color()`,
-mirroring EDMMM's own light/dark track logic) fully covers the canvas, outlined
-in that bar's own signature `colour`; a fill rectangle on top, sized to
+rectangle in a theme-appropriate track colour fully covers the canvas,
+outlined in that bar's own signature `colour`; a fill rectangle on top, sized to
 `total/capacity`, uses that same `colour` (or `_BAR_FULL_COLOUR` red at or
 over capacity). `colour` comes from `BAR_COLOURS[key]` (`ui.set_inventory_levels`
 and `_build_bars`'s initial draw both look it up, falling back to
@@ -553,7 +552,22 @@ replaced an earlier `ttk.Progressbar`-based implementation that rendered as
 an oversized, unthemed white box in practice — a `ttk` widget's native theme
 chrome doesn't reliably follow EDMC's `theme.update()` walk the way plain
 `tk` widgets do, whereas a canvas's own explicit background plus
-fully-covering rectangles look correct regardless. Bar/label
+fully-covering rectangles look correct regardless.
+
+`_bar_track_color()` derives the track colour from `_frame`'s own live,
+already-`theme.update()`-coloured background - reading it back via
+`winfo_rgb()` and shifting it a fixed amount toward black or white depending
+on its luminance (same technique `window.py`'s `_stripe_colour()` uses for
+its Treeview row shading) - rather than branching on `theme.active ==
+theme.THEME_DEFAULT`. An earlier version used that enum comparison directly
+(matching EDMMM's own approach) but it silently evaluated as "always light"
+in practice, which is what produced light-gray/white bars under EDMC's Dark
+theme; reading a widget's own resolved colour back can't be wrong the way
+guessing at an internal theme constant can. Because bars are first drawn in
+`_build_bars()` before `theme.update(_frame)` has run, `create_plugin_app`
+redraws every bar once more immediately after that call, so the very first
+paint already reflects the real background rather than the pre-theme
+default. Bar/label
 widths (`_BAR_NAME_WIDTH`, `_BAR_VALUE_WIDTH`, `_BAR_WIDTH`) are fixed
 regardless of label length or count magnitude, per this developer's standing
 rule that nothing in a `plugin_app` frame may let variable content widen

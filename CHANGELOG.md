@@ -22,7 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   — clicking any bar opens the inventory window, replacing the old
   **Inventory** button. Bars are drawn on a plain `tk.Canvas` rather than
   `ttk.Progressbar`, after the latter rendered as an oversized, unthemed
-  white box under EDMC's theming.
+  white box under EDMC's theming. The bar track colour is derived from the
+  panel's own live background rather than a theme-name check, so it now
+  correctly renders dark under EDMC's Dark theme instead of staying
+  light-gray/white (the theme-name check silently always evaluated as
+  "light" in practice).
 - **Ship & SRV cargo-hold tracking (scope extension).** A new `cargo.py`
   module tracks which vehicle (ship, on foot, or SRV) the commander
   currently occupies from `Embark`/`Disembark`/`LaunchSRV`/`DockSRV` journal
