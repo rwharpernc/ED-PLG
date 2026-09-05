@@ -2,7 +2,7 @@
 
 **Version:** 1.1.0  
 **Author:** CMDR Bocheaux  
-**Last updated:** 2026-09-03
+**Last updated:** 2026-09-05
 
 ## 1. Overview
 
@@ -26,6 +26,7 @@ ED-PLG/
 │   ├── __init__.py         # __version__
 │   ├── load.py             # EDMC callbacks (entry point)
 │   ├── inventory.py        # InventoryTracker
+│   ├── cargo.py            # VehicleState + ship/SRV cargo capacity
 │   ├── suit.py             # SuitState + backpack capacity table
 │   ├── overlay.py          # PillageOverlay (EDMCModernOverlay client)
 │   ├── sound.py            # PillageSound (optional pickup beep, winsound)
@@ -124,9 +125,15 @@ Log destination: `%TEMP%\EDMarketConnector.log` (Windows).
 | `SwitchSuitLoadout` | Same handler as `SuitLoadout`. |
 | `BackpackChange` | Apply deltas; log pillage, update panel, and send overlay for `Added` items. |
 | `CarrierDecommission` | Drop cached carrier locker for the commander. |
+| `Embark` | `VehicleState.apply_embark` — `SRV: true` → vehicle becomes `srv`, else `ship` (see §6.1a). |
+| `Disembark` | `VehicleState.apply_disembark` — vehicle becomes `foot` regardless of which vehicle was exited. |
+| `LaunchSRV` | `VehicleState.apply_launch_srv` — vehicle becomes `srv`; records `SRVType`/`SRVType_Localised` for the cargo bar's label/capacity lookup. |
+| `DockSRV` | `VehicleState.apply_dock_srv` — vehicle becomes `ship`; clears the recorded SRV type. |
 
-Every handled event ends by calling `window.refresh()`, which is a no-op unless the
-inventory window is open.
+Every handled event ends by calling `window.refresh()` (no-op unless the
+inventory window is open) and `_refresh_panel_bars(state)` (see §6.6),
+regardless of which branch above handled it — this keeps every main-panel bar
+current after any event, not just the ones that changed a given store.
 
 ### 5.2 BackpackChange schema
 
@@ -188,6 +195,8 @@ From the `state` dict in `journal_entry()`:
 | `Component` | Ship locker components. |
 | `Item` | Ship locker items. |
 | `Data` | Ship locker data. |
+| `Cargo` | `{ commodity: count }` for whichever hold (ship or SRV) is currently active — read by `cargo.py` for the main-panel Cargo bar's current total. Values only; commodity names are never surfaced (see design-spec §2 Out of scope). |
+| `CargoCapacity` | Ship's cargo-hold capacity, set by EDMC from `Loadout` events — read by `cargo.py` while the vehicle is `ship`. |
 
 Ship engineering keys (`Raw`, `Manufactured`, `Encoded`) are **not** read.
 
@@ -492,15 +501,30 @@ announced_categories() -> FrozenSet[str]         # categories that get a pillage
 save_prefs(cmdr: str) -> bool
 set_status(message: str) -> None
 set_last_event(message: str) -> None
+set_inventory_levels(rows: List[Tuple[str, str, int, Optional[int]]]) -> None  # (key, label, total, capacity)
 run_on_main_thread(callback) -> None
 set_update_downloading(version: str) -> None
 set_update_downloaded(version: str) -> None
 set_update_applied(version: str) -> None
 ```
 
+`create_plugin_app` builds a header row (title + status, always visible, click
+anywhere to toggle collapse) and a content frame (the bars, last-event line,
+version line) that's `grid_remove()`d entirely while collapsed —
+`edplg_panel_collapsed` persists the choice. `set_inventory_levels` updates the
+four bar rows (`BAR_ORDER = ("backpack", "ship_locker", "fleet_carrier_locker",
+"cargo")`) from `load.py`'s `_refresh_panel_bars`; a key omitted from `rows`
+(only ever `"cargo"`, while on foot with no vehicle) has its row hidden via
+`pack_forget()` rather than left showing a stale value. Every bar row is bound
+to `on_show_inventory` — there is no separate button. Bar/label widths
+(`_BAR_NAME_WIDTH`, `_BAR_VALUE_WIDTH`, `_BAR_LENGTH`) are fixed regardless of
+label length or count magnitude, per this developer's standing rule that
+nothing in a `plugin_app` frame may let variable content widen EDMC's main
+window.
+
 Uses `theme.update(frame)` for EDMC dark/light theme consistency. `ui.py` does not
-import `load.py`; the Inventory button is wired via the `on_show_inventory` callback
-to keep the dependency one-way. `ui.py` does import `update.py` (for
+import `load.py`; opening the inventory window from a bar click is wired via the
+`on_show_inventory` callback to keep the dependency one-way. `ui.py` does import `update.py` (for
 `CONFIG_AUTO_UPDATE`/`RELEASES_PAGE_URL`) and `overlay.py` (for the
 `DEFAULT_ORIGIN_*`/`MAX_ORIGIN_*` constants only — it never touches the overlay
 client itself), one-way dependencies in the other direction: neither `update.py`
@@ -537,11 +561,24 @@ Config keys:
 | `edplg_window_geometry` | str | Inventory window position/size |
 | `edplg_auto_update` | bool | Auto-update toggle (default **off** - opt-in) |
 | `edplg_last_version` | str | Internal - see §14, `check_applied_update()` |
+| `edplg_panel_collapsed` | bool | Main-panel collapsed state (default expanded) |
 
 ### 6.7 `load.py` — event dispatch
 
-`journal_entry()` delegates to `_dispatch()` and then calls `window.refresh()` in a
-`finally` block, so the window tracks state even if a handler raises.
+`journal_entry()` delegates to `_dispatch()` and then calls `window.refresh()` and
+`_refresh_panel_bars(state)` in a `finally` block, so the window and main-panel
+bars both track state even if a handler raises, and stay current after *any*
+event rather than only the ones each function's own branch handles.
+
+`_refresh_panel_bars(state)` builds the four `(key, label, total, capacity)`
+rows described in §6.6 from `_tracker.snapshot()`, `_suit.capacities()`, and
+`_vehicle.cargo_bar(state)` (see §6.9), and passes them to
+`ui.set_inventory_levels()`. The backpack row's capacity is `None` unless
+`_suit.capacities()` has an entry for every `TRACKED_CATEGORIES` member (a
+partial suit-capacity table would otherwise understate the true capacity).
+`_on_commander_session()` calls `_vehicle.reset()` before resyncing, since a
+fresh journal file replays its own Embark/LaunchSRV history from scratch and
+any vehicle state carried over from a previous session would otherwise be stale.
 
 Pillage message format:
 
@@ -587,6 +624,41 @@ RELEASES_PAGE_URL: str    # imported by ui.py for its Settings-tab link
 
 No Tkinter dependency; `check_async()` reads `CONFIG_AUTO_UPDATE` via `config`
 directly rather than through `ui.py`, so this module never imports `ui.py`.
+
+### 6.9 `cargo.py` — `VehicleState`
+
+```python
+VEHICLE_SHIP = "ship"
+VEHICLE_FOOT = "foot"
+VEHICLE_SRV = "srv"
+SRV_INFO: Dict[str, Tuple[str, Optional[int]]]   # fuzzy-match key -> (display name, capacity or None)
+
+class VehicleState:
+    def apply_embark(entry) -> None       # SRV: true/false -> srv/ship
+    def apply_disembark(entry) -> None    # always -> foot
+    def apply_launch_srv(entry) -> None   # -> srv; records SRVType(_Localised)
+    def apply_dock_srv(entry) -> None     # -> ship; clears recorded SRV type
+    def reset() -> None                   # back to the LoadGame/Start default (ship)
+    def cargo_bar(state) -> Optional[Tuple[str, int, Optional[int]]]  # (label, total, capacity) or None on foot
+    @property vehicle -> str
+```
+
+No Tkinter dependency; pure state machine, independent of `inventory.py` (a
+deliberately separate ledger — see design-spec §2/§12). `cargo_bar`'s `total`
+is `sum(state['Cargo'].values())`, the same field for either vehicle, since
+`Cargo.json` (and therefore EDMC's `state['Cargo']`) reflects whichever hold is
+currently active. `capacity` for `ship` comes from `state['CargoCapacity']`
+(only if it's a positive int — a ship not yet reporting a `Loadout` this
+session has no key at all); for `srv` it comes from `SRV_INFO`, matched by a
+case-insensitive substring search against `SRVType_Localised` (preferred) or
+`SRVType` — an unrecognised type returns `("SRV", None)` rather than raising or
+guessing. `SRV_INFO` currently has confirmed capacities for `scarab` (4) and
+`scorpion` (2); `rhino` has a display name only (`None` capacity) — see
+design-spec §11 for why.
+
+`load.py` holds one module-level `_vehicle: VehicleState` instance, hooked to
+`Embark`/`Disembark`/`LaunchSRV`/`DockSRV` in `_dispatch()` and reset in
+`_on_commander_session()` (see §6.7).
 
 ## 7. Suit Backpack Capacity
 
@@ -784,11 +856,24 @@ Manual verification steps for releases:
     part — see `TODO.md`) whether ED-PLG's elements actually get a
     background panel anchored there via ModernOverlay's controller, or
     whether the attempt silently no-ops. Record the result either way.
+20. Click the main panel's title; confirm it collapses to just the header
+    line (bars, last-event, and version lines all hidden), the arrow flips
+    to `▸`, and the choice survives an EDMC restart. Click again to expand
+    and confirm the arrow flips back to `▾`.
+21. With EDMC's Odyssey save docked in a ship, confirm the panel shows a
+    "Ship Cargo" bar matching the ship's actual hold (`used/capacity`).
+    Launch an SRV (Scarab or Scorpion) and confirm the bar relabels to
+    `"<Type> Cargo"` with that vehicle's known capacity; get out on foot and
+    confirm the bar disappears entirely (not just zeroed); get back in and
+    confirm it reappears correctly labelled.
+22. Fill the Backpack, Ship Locker, or Cargo bar to capacity and confirm it
+    turns red on the main panel; confirm clicking any bar (not just the old
+    button's former location) opens the inventory window.
 
-Non-game verification: `suit.py`, `names.py`, `names_fdevids.py`, `inventory.py`,
-`overlay.py`, `sound.py`, and `window.py` can be exercised outside EDMC by
-stubbing the `config` and `theme` modules in `sys.modules` and replaying real
-journal lines through the tracker.
+Non-game verification: `suit.py`, `cargo.py`, `names.py`, `names_fdevids.py`,
+`inventory.py`, `overlay.py`, `sound.py`, and `window.py` can be exercised
+outside EDMC by stubbing the `config` and `theme` modules in `sys.modules` and
+replaying real journal lines through the tracker.
 
 ## 12. Dependencies
 

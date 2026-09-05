@@ -2,7 +2,7 @@
 
 **Version:** 1.1.0  
 **Author:** CMDR Bocheaux  
-**Last updated:** 2026-09-03
+**Last updated:** 2026-09-05
 
 ## 1. Purpose
 
@@ -33,13 +33,19 @@ and in-game overlay). The second is answered on demand, in the inventory window.
   **fleet carrier locker** (via CAPI).
 - Backpack **capacity** for the currently worn suit.
 - Real-time feedback via EDMC log output, a UI panel, and an optional in-game overlay.
+- **Ship and SRV cargo-hold tonnage** (used vs. capacity only — see `cargo.py`),
+  shown as a fourth main-panel bar that switches between the ship's cargo hold
+  and the currently-deployed SRV's, so a commander doing salvage or mining runs
+  can see hold pressure without leaving the panel. Deliberately narrow: this is
+  a tonnage gauge, not commodity tracking — see Out of scope below.
 
 ### Out of scope
 
 - Ship engineering materials (`Materials` event: Raw, Manufactured, Encoded).
-- **Commodity cargo.** Cargo tonnage (ship cargo racks, the 25,000 t carrier hold,
-  SRV canisters) is a separate game system from the microresource locker. ED-PLG
-  tracks microresources only; no tonnage figure appears anywhere in the plugin.
+- **Commodity identity, prices, and market data.** ED-PLG tracks cargo-hold
+  *tonnage* (see In scope above) but has no idea what's actually in the hold,
+  what it's worth, or where to sell it — that remains a separate game system
+  this plugin does not model.
 - Combat logging, bounty tracking, or market/trading data.
 - Network services, cloud sync, or external databases.
 - Consumables (tracked internally for completeness but not emphasised in output).
@@ -68,17 +74,27 @@ which stays fixed so it keeps fitting the overlay's stack.
 
 ### 3.2 UI panel
 
-A single row on the EDMC main window displays:
+A header row on the EDMC main window is always visible and doubles as a
+collapse toggle (state persisted in EDMC's config, same click-to-collapse
+treatment as other panels in this developer's plugin lineup):
 
 | Element | Content |
 |---------|---------|
-| Label | `ED-PLG:` |
+| Title | `▾ ED-PLG:` (arrow flips to `▸` when collapsed) — click anywhere on the row to toggle |
 | Status | Current sync state (e.g. "Inventory synced", "+2 item(s) pillaged") |
-| Button | **Inventory** — opens the inventory window (§3.5) |
+
+Everything below the header collapses/expands together:
+
+| Element | Content |
+|---------|---------|
+| Inventory bars | One row each for Backpack, Ship Locker, Carrier Locker, and (when a vehicle applies — §12) Cargo; each shows a fixed-width label, a fixed-length progress bar (red once full), and a `used/capacity` (or bare count where capacity is unknown) reading. Clicking anywhere on a row opens the inventory window (§3.5) — there is no separate button. |
 | Last event | Most recent pillage message (green text) |
 
 The UI updates only from the main EDMC thread via `journal_entry()` callbacks.
-No background threads touch Tkinter widgets.
+No background threads touch Tkinter widgets. Bar/label widths are fixed
+regardless of content length or magnitude, so a long label or a large count
+can never widen EDMC's main window — see this developer's standing rule for
+`plugin_app` widgets in variable-content EDMC plugins generally.
 
 ### 3.3 Log output
 
@@ -177,8 +193,9 @@ gated by the same preference, per category.
 
 ### 3.5 Inventory window
 
-Opened from the **Inventory** button; a non-modal `Toplevel` that can stay open
-during play and refreshes live on every inventory-changing journal event.
+Opened by clicking any bar on the main panel (§3.2); a non-modal `Toplevel`
+that can stay open during play and refreshes live on every inventory-changing
+journal event.
 
 One tab per storage location — **Backpack**, **Ship Locker**, **Carrier Locker** —
 each showing:
@@ -275,6 +292,11 @@ flowchart TD
     I --> K
     J --> K
     K --> L[Refresh inventory window if open]
+    B -->|Embark / Disembark| M[Update vehicle: ship / foot / SRV]
+    B -->|LaunchSRV / DockSRV| N[Update vehicle + SRV type]
+    M --> O[Refresh main-panel bars, incl. Cargo]
+    N --> O
+    K --> O
 ```
 
 ## 7. Suit Backpack Capacity
@@ -386,7 +408,7 @@ fetches anything itself.
 | Reliability | Reconcile with EDMC `state` dict after each `BackpackChange`. |
 | Compatibility | EDMC 5.x with Python 3.9+ (`plugin_start3` API). |
 | Degradation | Optional dependencies (overlay) are absent-by-default: import failure disables the feature, never the plugin. |
-| Maintainability | Modular layout: `load`, `inventory`, `suit`, `overlay`, `sound`, `window`, `names`, `names_fdevids` (generated), `ui`. |
+| Maintainability | Modular layout: `load`, `inventory`, `cargo`, `suit`, `overlay`, `sound`, `window`, `names`, `names_fdevids` (generated), `ui`. |
 | Portability | Pure Python plugin; build produces a copy-ready folder. |
 
 ## 11. Known Limitations
@@ -408,14 +430,48 @@ These are inherited from the game and EDMC, not bugs in ED-PLG:
   mod is only tracked as present/absent, not by engineering grade. The Flight
   Suit has no hardcoded entry at all. A commander can correct any of this
   per owned suit loadout from the Settings tab rather than editing `suit.py`.
+- SRV cargo capacity is matched by a case-insensitive substring search against
+  whatever the journal reports for `SRVType`/`SRVType_Localised` (the exact raw
+  values aren't documented) — an unrecognised or new SRV type falls back to a
+  generic label with capacity `None` rather than a wrong number.
+- The Rhino SRV (added 2026-09-02) has a recognised display name but no
+  capacity figure: Frontier describes its hold as expandable up to 24t with no
+  confirmed journal field yet for the actual fitted amount. Its bar shows the
+  current cargo count only, until that's confirmed against a real journal entry.
 
-## 12. Future Considerations
+## 12. Ship & SRV Cargo
+
+Added alongside the collapsible main panel (§3.2) as a deliberate, narrow
+scope extension — see §2's In/Out of scope split for the boundary this stays
+inside (tonnage only, never commodity identity or value).
+
+`cargo.py`'s `VehicleState` tracks which of three vehicles the commander
+currently occupies — `ship`, `foot`, or `srv` — purely from
+Embark/Disembark/LaunchSRV/DockSRV journal events (see §6's Event Flow
+diagram), since EDMC's own monitor state discards this distinction after
+processing an event. It defaults to `ship` (the common case at `LoadGame`)
+and is reset on every new commander session, so a stale vehicle from a
+previous session can never bleed into a fresh one.
+
+The main panel's fourth bar reads from `VehicleState.cargo_bar(state)`:
+
+| Vehicle | Bar label | Capacity source |
+|---------|-----------|------------------|
+| Ship | "Ship Cargo" | `state['CargoCapacity']` (from EDMC's own `Loadout` handling) |
+| SRV | `"<Type> Cargo"` | A small static table (`cargo.SRV_INFO`): Scarab 4t, Scorpion 2t; Rhino has a label but no confirmed capacity yet |
+| On foot | *(bar hidden)* | N/A — no cargo hold applies |
+
+Current cargo count, for either vehicle, is `sum(state['Cargo'].values())` —
+the same field EDMC's monitor populates from `Cargo.json` regardless of which
+hold is currently active, so no separate parsing is needed per vehicle.
+
+## 13. Future Considerations
 
 None currently — every enhancement previously listed here has shipped (see
 `CHANGELOG.md`). New ideas belong in `TODO.md` until they're designed enough
 to land here.
 
-## 13. References
+## 14. References
 
 - [Technical Specification](./tech-spec.md)
 - [Attributions & Credits](./ATTRIBUTIONS.md)

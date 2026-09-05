@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Collapsible main panel with at-a-glance inventory bars.** The panel
+  title is now a click-to-collapse header (arrow + `ED-PLG:` + live status),
+  collapsing down to that one line and remembering the choice across
+  restarts. Expanded, it shows a bar each for Backpack, Ship Locker, and
+  Carrier Locker, plus a fourth Cargo bar (see below) — clicking any bar
+  opens the inventory window, replacing the old **Inventory** button.
+- **Ship & SRV cargo-hold tracking (scope extension).** A new `cargo.py`
+  module tracks which vehicle (ship, on foot, or SRV) the commander
+  currently occupies from `Embark`/`Disembark`/`LaunchSRV`/`DockSRV` journal
+  events, and reports that vehicle's cargo tonnage on the main panel's
+  fourth bar: the ship's hold while in a ship, the SRV's hold (Scarab 4t,
+  Scorpion 2t; Rhino shows a count but no capacity yet — see Known
+  Limitations) while in one, and hidden entirely on foot with no vehicle.
+  This is tonnage only — commodity identity, prices, and market data remain
+  out of scope; see README's Scope section and design-spec §2/§12.
+
+### Changed
+
+- README/design-spec/tech-spec's "out of scope" wording narrowed from
+  "commodity cargo" to "commodity identity, prices, and market data", to
+  make room for the tonnage-only tracking above without re-opening the door
+  to commodity trading features.
+
 - **Richer overlay visuals, within EDMCModernOverlay's capabilities.**
   - Pillage lines are now coloured per category (blue Assets, green Goods,
     violet Data) instead of one flat colour, so a fast loot run is

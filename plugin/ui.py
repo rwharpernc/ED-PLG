@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Callable, Dict, FrozenSet, Optional, Tuple
+from typing import Callable, Dict, FrozenSet, List, Optional, Tuple
 
 import tkinter as tk
+from tkinter import font as tkfont
+from tkinter import ttk
 
 import myNotebook as nb
 from config import appname, config
@@ -29,6 +31,35 @@ CONFIG_OVERLAY_BARS_ENABLED = "edplg_overlay_bars_enabled"
 CONFIG_OVERLAY_ANCHOR = "edplg_overlay_anchor"
 CONFIG_SOUND_ENABLED = "edplg_sound_enabled"
 CONFIG_MESSAGE_FORMAT = "edplg_message_format"
+CONFIG_PANEL_COLLAPSED = "edplg_panel_collapsed"
+
+# Main-panel section title, echoed in the collapsible header (see
+# _update_header_text) the same way EDMMM titles its own collapsible panel.
+PANEL_TITLE = "ED-PLG"
+
+# Fixed order of the main-panel inventory bars. "cargo" is location-dependent
+# (see cargo.py) and its row is grid_remove()'d entirely while on foot with
+# no vehicle - the other three are always shown.
+BAR_ORDER: Tuple[str, ...] = ("backpack", "ship_locker", "fleet_carrier_locker", "cargo")
+BAR_DEFAULT_LABELS: Dict[str, str] = {
+    "backpack": "Backpack",
+    "ship_locker": "Ship Locker",
+    "fleet_carrier_locker": "Carrier Locker",
+}
+
+# Bar widget geometry - fixed pixel/character widths so a long label or a
+# large count can never widen EDMC's main window (see the plugin_app sizing
+# note in this repo's global instructions).
+_BAR_NAME_WIDTH = 13
+_BAR_VALUE_WIDTH = 13
+_BAR_LENGTH = 90
+
+STYLE_PANEL_BAR = "EDPLG.Panel.Horizontal.TProgressbar"
+STYLE_PANEL_BAR_FULL = "EDPLG.PanelFull.Horizontal.TProgressbar"
+_PANEL_BAR_FULL_COLOUR = "#c0392b"
+
+# (key, label, total, capacity_or_None) for one main-panel bar row.
+BarRow = Tuple[str, str, int, Optional[int]]
 
 # The nine anchors ModernOverlay's plugin-group API accepts (see overlay.py's
 # _register_plugin_group). Only meaningful when ModernOverlay is the active
@@ -56,9 +87,14 @@ _UPDATED_COLOR = "#2e7d32"
 _UPDATED_MESSAGE_DURATION_MS = 15_000
 
 _frame: Optional[tk.Frame] = None
+_title_label: Optional[tk.Label] = None
 _status_label: Optional[tk.Label] = None
+_content_frame: Optional[tk.Frame] = None
 _last_event_label: Optional[tk.Label] = None
 _version_label: Optional[HyperlinkLabel] = None
+_on_show_inventory: Optional[Callable[[], None]] = None
+_bar_rows: Dict[str, Dict[str, tk.Widget]] = {}
+_panel_collapsed: bool = False
 _overlay_var: Optional[tk.BooleanVar] = None
 _overlay_x_var: Optional[tk.StringVar] = None
 _overlay_y_var: Optional[tk.StringVar] = None
@@ -80,35 +116,173 @@ def create_plugin_app(
     parent: tk.Frame,
     on_show_inventory: Callable[[], None],
 ) -> tk.Frame:
-    """Create the main-window frame for EDMC."""
-    global _frame, _status_label, _last_event_label, _version_label
+    """
+    Create the main-window frame for EDMC.
+
+    Structure: a header row (title + live status) that's always visible and
+    doubles as the collapse toggle - the same click-to-collapse treatment
+    EDMMM uses for its own panel - followed by a content frame (inventory
+    bars, last pickup, the one-time "Updated to vX" line) that's hidden
+    entirely while collapsed, leaving only the header showing.
+    """
+    global _frame, _title_label, _status_label, _content_frame
+    global _last_event_label, _version_label, _on_show_inventory, _panel_collapsed
+
+    _on_show_inventory = on_show_inventory
+    _panel_collapsed = bool(config.get_bool(CONFIG_PANEL_COLLAPSED, default=False))
 
     _frame = tk.Frame(parent)
-    _frame.columnconfigure(1, weight=1)
+    _frame.columnconfigure(0, weight=1)
 
-    title = tk.Label(_frame, text="ED-PLG:")
-    title.grid(row=0, column=0, sticky=tk.W, padx=(0, 4))
+    _configure_bar_styles(_frame)
 
-    _status_label = tk.Label(_frame, text="Awaiting Odyssey loot…")
-    _status_label.grid(row=0, column=1, sticky=tk.W)
+    header = tk.Frame(_frame, cursor="hand2")
+    header.grid(row=0, column=0, sticky=tk.EW)
+    header.bind("<Button-1>", lambda _e: _toggle_collapsed())
 
-    inventory_button = tk.Button(_frame, text="Inventory", command=on_show_inventory)
-    inventory_button.grid(row=0, column=2, sticky=tk.E, padx=(4, 0))
+    _title_label = tk.Label(header, font=_bold_font(header), cursor="hand2")
+    _title_label.pack(side=tk.LEFT)
+    _title_label.bind("<Button-1>", lambda _e: _toggle_collapsed())
 
-    _last_event_label = tk.Label(_frame, text="", wraplength=420, justify=tk.LEFT)
-    _last_event_label.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(2, 0))
+    _status_label = tk.Label(header, text="Awaiting Odyssey loot…", cursor="hand2")
+    _status_label.pack(side=tk.LEFT, padx=(4, 0))
+    _status_label.bind("<Button-1>", lambda _e: _toggle_collapsed())
+
+    _content_frame = tk.Frame(_frame)
+    _content_frame.grid(row=1, column=0, sticky=tk.EW)
+    _content_frame.columnconfigure(0, weight=1)
+
+    _build_bars(_content_frame)
+
+    _last_event_label = tk.Label(_content_frame, text="", wraplength=420, justify=tk.LEFT)
+    _last_event_label.grid(row=1, column=0, sticky=tk.W, pady=(2, 0))
 
     # The plugin version itself lives only in the Settings tab (see
     # create_prefs) - this row is reserved purely for the one-time
     # "Updated to vX" confirmation right after a staged update takes
     # effect (see _apply_version_state), so it starts hidden.
-    _version_label = HyperlinkLabel(_frame, text="", url=RELEASES_PAGE_URL, underline=True)
-    _version_label.grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=(2, 0))
+    _version_label = HyperlinkLabel(_content_frame, text="", url=RELEASES_PAGE_URL, underline=True)
+    _version_label.grid(row=2, column=0, sticky=tk.W, pady=(2, 0))
     _version_label.grid_remove()
     _apply_version_state()
 
+    _update_header_text()
+    _apply_collapsed_state()
+
     theme.update(_frame)
     return _frame
+
+
+def _bold_font(_widget: tk.Misc) -> Tuple[str, int, str]:
+    try:
+        base = tkfont.nametofont("TkDefaultFont")
+        return (base.actual("family"), base.actual("size"), "bold")
+    except Exception:
+        logger.debug("Could not resolve the default font for the panel title", exc_info=True)
+        return ("TkDefaultFont", 9, "bold")
+
+
+def _configure_bar_styles(widget: tk.Misc) -> None:
+    style = ttk.Style(widget)
+    style.configure(STYLE_PANEL_BAR, thickness=8)
+    style.configure(STYLE_PANEL_BAR_FULL, thickness=8, background=_PANEL_BAR_FULL_COLOUR)
+
+
+def _build_bars(parent: tk.Frame) -> None:
+    """Create (but do not populate) one row per BAR_ORDER entry. Each row is
+    click-to-open-inventory, same as the button it replaces."""
+    global _bar_rows
+
+    bars = tk.Frame(parent)
+    bars.grid(row=0, column=0, sticky=tk.EW, pady=(0, 2))
+    _bar_rows = {}
+
+    for key in BAR_ORDER:
+        row = tk.Frame(bars, cursor="hand2")
+        row.pack(fill=tk.X, pady=1)
+
+        name_label = tk.Label(row, text=BAR_DEFAULT_LABELS.get(key, ""), width=_BAR_NAME_WIDTH, anchor=tk.W)
+        name_label.pack(side=tk.LEFT)
+
+        bar = ttk.Progressbar(row, maximum=100, length=_BAR_LENGTH, style=STYLE_PANEL_BAR)
+        bar.pack(side=tk.LEFT, padx=(4, 4))
+
+        value_label = tk.Label(row, text="", width=_BAR_VALUE_WIDTH, anchor=tk.W)
+        value_label.pack(side=tk.LEFT)
+
+        for widget in (row, name_label, bar, value_label):
+            widget.bind("<Button-1>", _open_inventory)
+
+        _bar_rows[key] = {"row": row, "name": name_label, "bar": bar, "value": value_label}
+
+
+def _open_inventory(_event=None) -> None:
+    if _on_show_inventory is not None:
+        _on_show_inventory()
+
+
+def set_inventory_levels(rows: List[BarRow]) -> None:
+    """
+    Update the main-panel bars from (key, label, total, capacity) tuples.
+
+    A key present in BAR_ORDER but absent from `rows` (only ever "cargo",
+    while on foot with no vehicle - see cargo.VehicleState.cargo_bar) has its
+    row hidden entirely rather than left stale.
+    """
+    if not _bar_rows:
+        return
+
+    present = {key: (label, total, capacity) for key, label, total, capacity in rows}
+
+    for key in BAR_ORDER:
+        widgets = _bar_rows.get(key)
+        if widgets is None:
+            continue
+
+        row = widgets["row"]
+        data = present.get(key)
+        if data is None:
+            row.pack_forget()
+            continue
+
+        label, total, capacity = data
+        widgets["name"]["text"] = label
+        widgets["value"]["text"] = f"{total}/{capacity}" if capacity else str(total)
+
+        bar = widgets["bar"]
+        if capacity:
+            bar["value"] = min(100, round(total * 100 / capacity))
+            bar.configure(style=STYLE_PANEL_BAR_FULL if total >= capacity else STYLE_PANEL_BAR)
+        else:
+            bar["value"] = 0
+            bar.configure(style=STYLE_PANEL_BAR)
+
+        if not row.winfo_ismapped():
+            row.pack(fill=tk.X, pady=1)
+
+
+def _update_header_text() -> None:
+    if _title_label is None:
+        return
+    arrow = "▸" if _panel_collapsed else "▾"
+    _title_label["text"] = f"{arrow} {PANEL_TITLE}:"
+
+
+def _toggle_collapsed() -> None:
+    global _panel_collapsed
+    _panel_collapsed = not _panel_collapsed
+    config.set(CONFIG_PANEL_COLLAPSED, _panel_collapsed)
+    _update_header_text()
+    _apply_collapsed_state()
+
+
+def _apply_collapsed_state() -> None:
+    if _content_frame is None:
+        return
+    if _panel_collapsed:
+        _content_frame.grid_remove()
+    else:
+        _content_frame.grid()
 
 
 def run_on_main_thread(callback) -> None:

@@ -18,6 +18,7 @@ from companion import CAPIData
 from config import appname
 
 from . import __version__
+from .cargo import VehicleState
 from .inventory import CATEGORY_SHORT, SHIP_LOCKER_CAPACITY, TRACKED_CATEGORIES, InventoryTracker
 from .overlay import PillageOverlay
 from .sound import PillageSound
@@ -55,6 +56,7 @@ _tracker = InventoryTracker()
 _overlay = PillageOverlay()
 _sound = PillageSound()
 _suit = SuitState()
+_vehicle = VehicleState()
 _ui_frame: Optional[tk.Frame] = None
 _updater: Optional[UpdateManager] = None
 """Kept alive purely so the background check thread's bound method holds a
@@ -112,6 +114,7 @@ def plugin_app(parent: tk.Frame) -> tk.Frame:
     """Create ED-PLG widgets on the EDMC main window."""
     global _ui_frame
     _ui_frame = ui.create_plugin_app(parent, _show_inventory)
+    _refresh_panel_bars({})
     return _ui_frame
 
 
@@ -149,6 +152,7 @@ def journal_entry(
     finally:
         # No-op unless the inventory window is open.
         window.refresh()
+        _refresh_panel_bars(state)
 
 
 def _dispatch(
@@ -197,6 +201,22 @@ def _dispatch(
         _tracker.clear_fleet_carrier_for_commander(cmdr)
         logger.info("Fleet carrier locker cleared for %s (decommission)", cmdr)
         ui.set_status(f"Carrier decommissioned ({cmdr})")
+        return None
+
+    if event == "Embark":
+        _vehicle.apply_embark(entry)
+        return None
+
+    if event == "Disembark":
+        _vehicle.apply_disembark(entry)
+        return None
+
+    if event == "LaunchSRV":
+        _vehicle.apply_launch_srv(entry)
+        return None
+
+    if event == "DockSRV":
+        _vehicle.apply_dock_srv(entry)
         return None
 
     return None
@@ -256,6 +276,7 @@ def capi_fleetcarrier(data: CAPIData) -> Optional[str]:
 
 
 def _on_commander_session(cmdr: str, state: Dict[str, Any], *, reason: str) -> None:
+    _vehicle.reset()
     switched = _tracker.set_commander(cmdr)
     _tracker.sync_all_from_state(state)
     _warn_ship_locker_capacity()
@@ -310,6 +331,46 @@ def _warn_ship_locker_capacity() -> None:
             colour=LOCKER_WARNING_COLOUR,
             ttl=LOCKER_WARNING_TTL,
         )
+
+
+def _refresh_panel_bars(state: Dict[str, Any]) -> None:
+    """
+    Redraw the main-panel inventory bars (see ui.set_inventory_levels) from
+    the current tracker/vehicle state. Cheap and called after every journal
+    event (like window.refresh()) rather than only from the handlers that
+    changed a given store, so a bar can never go stale after an event this
+    function doesn't otherwise know about.
+    """
+    snapshot = _tracker.snapshot()
+    backpack_capacities = _suit.capacities(cmdr=_tracker.commander)
+
+    rows = [
+        (
+            "backpack",
+            "Backpack",
+            sum(sum(items.values()) for items in snapshot["backpack"].values()),
+            sum(backpack_capacities.values()) if len(backpack_capacities) == len(TRACKED_CATEGORIES) else None,
+        ),
+        (
+            "ship_locker",
+            "Ship Locker",
+            sum(sum(items.values()) for items in snapshot["ship_locker"].values()),
+            sum(SHIP_LOCKER_CAPACITY.values()),
+        ),
+        (
+            "fleet_carrier_locker",
+            "Carrier Locker",
+            sum(sum(items.values()) for items in snapshot["fleet_carrier_locker"].values()),
+            None,
+        ),
+    ]
+
+    cargo_row = _vehicle.cargo_bar(state)
+    if cargo_row is not None:
+        label, total, capacity = cargo_row
+        rows.append(("cargo", label, total, capacity))
+
+    ui.set_inventory_levels(rows)
 
 
 def _refresh_locker_capacity_bars() -> None:

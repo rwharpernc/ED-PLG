@@ -22,12 +22,14 @@ That total is the number that matters when you are deciding whether a pickup is 
 
 - **Live inventory tracking** across your suit backpack, ship locker, and fleet carrier locker
 - **Pillage notifications** on every pickup, with your new combined total — wording, a pickup sound, and which categories announce at all are all configurable
+- **Collapsible main panel** — click the title to collapse the ED-PLG panel down to a single status line, or expand it back out; EDMC remembers your choice
+- **At-a-glance capacity bars** on the main panel for Backpack, Ship Locker, and Carrier Locker, plus a fourth bar that tracks your current vehicle's cargo hold (ship, or SRV when deployed) — click any bar to open the full inventory window
 - **In-game overlay alerts** via [EDMCModernOverlay](https://github.com/SweetJonnySauce/EDMCModernOverlay) (optional — the plugin works fine without it)
 - **Inventory window** — a tabbed view of everything you hold, with capacity bars per category, so you can see at a glance how close your backpack is to full
 - **Ship locker capacity warning** — an in-game overlay alert when a ship locker category hits 90% full, so you're not caught having to drop loot before you can offload it (at your ship, or remotely via an Apex shuttle)
 - **Real names** for Frontier's internal resource IDs (`manufacturinginstructions` → *Manufacturing Instructions*), covering essentially every Odyssey microresource via a table imported from [EDCD/FDevIDs](https://github.com/EDCD/FDevIDs)
 
-**Deliberately out of scope:** ship engineering materials (Raw, Manufactured, Encoded) and commodity cargo. Those are separate game systems. ED-PLG deals only in Odyssey microresources — the stuff that upgrades your ground gear.
+**Deliberately out of scope:** ship engineering materials (Raw, Manufactured, Encoded) and commodity *trading* (names, prices, market data). ED-PLG's core is still Odyssey microresources — the stuff that upgrades your ground gear — but as of this release it also tracks ship/SRV **cargo tonnage** (used vs. capacity only, nothing about what's in the hold) since that matters for salvage and mining runs; see [Ship & SRV cargo](#ship--srv-cargo) below.
 
 ## Requirements
 
@@ -97,9 +99,27 @@ Nothing showing up? See [Troubleshooting](#troubleshooting).
 
 Launch Elite Dangerous and EDMC as usual, load your commander, and go raid something. Each pickup updates the panel, writes a line to the log, and draws an overlay message if you have an overlay plugin.
 
+### The main panel
+
+The ED-PLG panel's title line — **▾ ED-PLG:** followed by a live status — is clickable: it collapses the panel down to just that one line, or expands it back out. EDMC remembers whichever state you leave it in.
+
+Expanded, the panel shows a bar per store: **Backpack**, **Ship Locker**, **Carrier Locker**, and (see [Ship & SRV cargo](#ship--srv-cargo)) a fourth bar for whatever cargo hold you currently occupy. Each bar turns red once its store is completely full. **Click any bar** to open the full inventory window — there's no separate button.
+
+### Ship & SRV cargo
+
+The fourth main-panel bar tracks tonnage in whichever cargo hold applies to your current situation, and changes with it:
+
+| You are... | Bar shows |
+|---|---|
+| In your ship | Ship cargo hold, used / total capacity |
+| In a deployed SRV | The SRV's cargo hold, used / capacity (Scarab: 4t, Scorpion: 2t) |
+| On foot, no vehicle | Bar is hidden — no cargo hold applies |
+
+This is tonnage only — ED-PLG still has no idea what commodities are actually in the hold, and never will (see Scope above). The Rhino SRV (added 2026-09-02) shows its cargo count but not a capacity yet: Frontier describes its hold as expandable up to 24t, and there's no confirmed journal field for the actual fitted number yet, so ED-PLG shows what it knows rather than guessing.
+
 ### The inventory window
 
-Click **Inventory** on the ED-PLG panel:
+Click any bar on the ED-PLG panel:
 
 | Tab | Contents |
 |-----|----------|
@@ -211,6 +231,8 @@ ED-PLG keeps three separate ledgers, because the game does:
 
 The number in a pillage message — *"New Inventory Total: 12"* — is the **sum of all three**. That is the question you actually want answered when a container pops open: *do I already have enough of this?* Not *how many are in my backpack right now?* If you are ever confused why the announced total exceeds what your backpack could possibly hold, this is why. The Inventory window breaks the same data back out per location.
 
+Ship/SRV cargo (see [Ship & SRV cargo](#ship--srv-cargo)) is a separate, fourth ledger tracked purely for its own bar — it is never included in a pillage total, since cargo tonnage and Odyssey microresources are unrelated game systems that happen to share a panel.
+
 ### Baselines and deltas
 
 Two kinds of journal event drive the counts, and they work differently:
@@ -279,6 +301,8 @@ Nearly all of these come from the same root cause: **the plugin can only know wh
 - **Some consumable changes have no journal event at all** (throwing a grenade, for instance), so those counts can drift until the next baseline.
 - **Fleet carrier data lags 15–30 minutes** — CAPI, not journal, and throttled.
 - Inventory tracking leans on EDMC's best-effort `BackPack` state; ED-PLG reconciles against it after every change, which corrects drift but inherits any gaps EDMC itself has.
+- **Rhino SRV cargo capacity is unknown** — brand new at the time of writing (2026-09-02), with no confirmed journal field for its fitted capacity. Its bar shows a current count with no `/capacity`, rather than a guessed number, until that's confirmed.
+- **SRV type is matched fuzzily** (a case-insensitive substring match against whatever the journal reports for `SRVType`/`SRVType_Localised`, since the exact raw values aren't documented) — the safe failure mode is an unrecognised SRV falling back to a generic "SRV Cargo" bar with no capacity, never a wrong number.
 
 See [Design Specification — Known Limitations](docs/design-spec.md#11-known-limitations) for the detail.
 
@@ -308,7 +332,8 @@ Module map, in rough order of the data flow described above:
 | File | Role |
 |------|------|
 | [load.py](plugin/load.py) | EDMC entry point; receives journal events and dispatches them |
-| [inventory.py](plugin/inventory.py) | The three stores; applies baselines, deltas, and CAPI data |
+| [inventory.py](plugin/inventory.py) | The three microresource stores; applies baselines, deltas, and CAPI data |
+| [cargo.py](plugin/cargo.py) | Ship/SRV vehicle tracking and cargo-hold capacity — a separate ledger from inventory.py |
 | [suit.py](plugin/suit.py) | Current suit and the backpack capacity table |
 | [names.py](plugin/names.py) | Internal ID → display name resolution |
 | [names_fdevids.py](plugin/names_fdevids.py) | Generated: FDevIDs microresource names — do not hand-edit; regenerate with `npm run update-names` |
@@ -318,11 +343,11 @@ Module map, in rough order of the data flow described above:
 | [sound.py](plugin/sound.py) | Optional pickup notification sound (Windows `winsound`) |
 | [update.py](plugin/update.py) | Checks GitHub Releases and self-updates (see [Updates](#updates) above) |
 
-Dependencies point one way: `load.py` knows about everything; `ui.py` does not import `load.py` (the Inventory button is wired through a callback); `window.py` reads a `snapshot()` from the tracker rather than reaching into it.
+Dependencies point one way: `load.py` knows about everything; `ui.py` does not import `load.py` (opening the inventory window from a bar click is wired through a callback, same as the button it replaced); `window.py` reads a `snapshot()` from the tracker rather than reaching into it.
 
 **Auto-update is off by default, but can still overwrite a local test install if you've turned it on for that copy.** A plugin folder dropped into your EDMC plugins directory for testing looks, to `update.py`, exactly like a real install - if "Automatically download updates" is enabled there and the local build is older than the latest GitHub Release, EDMC will download and stage that release over your hand-edited files on its next restart. Drop an empty `disable-auto-update.txt` file in the plugin folder to override the checkbox unconditionally if you want it on elsewhere while still hand-editing this copy.
 
-The tracker, names, suit, overlay, sound, and window modules can all be exercised **outside EDMC** by stubbing the `config` and `theme` modules in `sys.modules` and replaying real journal lines through the tracker — useful, since the alternative is flying to a settlement to test a one-line change.
+The tracker, names, suit, cargo, overlay, sound, and window modules can all be exercised **outside EDMC** by stubbing the `config` and `theme` modules in `sys.modules` and replaying real journal lines through the tracker — useful, since the alternative is flying to a settlement to test a one-line change.
 
 See the [Technical Specification](docs/tech-spec.md) for the full API surface, event schemas, and handler behaviour.
 
