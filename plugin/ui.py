@@ -135,6 +135,30 @@ _override_defaults: Dict[Tuple[str, str], Optional[int]] = {}
 _version_state: tuple = ("normal", None)
 _updated_clear_scheduled: bool = False
 
+_theme_debug_logged: bool = False
+"""Guards the one-time diagnostic log line in _bar_track_color() - see there."""
+
+
+def _theme_update_deep(widget: tk.Misc) -> None:
+    """
+    theme.update(widget) only recolours `widget` itself plus its *direct*
+    children (confirmed from EDMC's actual theme.py: Theme.update() walks a
+    single level via widget.winfo_children(), not the whole subtree) - not
+    enough for this panel's several-levels-deep structure (_frame -> header/
+    _content_frame -> bars/labels -> row -> label/canvas/label). A single
+    call from create_plugin_app only ever reached _frame's immediate
+    children, never the labels or bar canvases nested further down. Walk the
+    whole subtree ourselves so every widget gets registered and recoloured,
+    regardless of how deep it sits.
+    """
+    try:
+        theme.update(widget)  # type: ignore[arg-type]
+    except Exception:
+        logger.debug("theme.update() failed for %r", widget, exc_info=True)
+
+    for child in widget.winfo_children():
+        _theme_update_deep(child)
+
 
 def create_plugin_app(
     parent: tk.Frame,
@@ -193,10 +217,17 @@ def create_plugin_app(
     _version_label.grid_remove()
     _apply_version_state()
 
+    hint = tk.Label(
+        _content_frame,
+        text="Click Inventory Bar to Open Inventory Panel",
+        anchor=tk.W,
+    )
+    hint.grid(row=4, column=0, sticky=tk.W, pady=(4, 0))
+
     _update_header_text()
     _apply_collapsed_state()
 
-    theme.update(_frame)
+    _theme_update_deep(_frame)
 
     # Bars were first drawn (in _build_bars) before theme.update() had a
     # chance to colour _status_label - _bar_track_color() reads that label's
@@ -239,14 +270,20 @@ def _bar_track_color() -> str:
     background only if theme.current isn't populated yet (e.g. reading it
     before EDMC's own theme.apply() has ever run at all).
     """
+    global _theme_debug_logged
+
     base = None
+    current_snapshot = None
     try:
+        current_snapshot = dict(theme.current)
         base = theme.current.get("background")
     except AttributeError:
         base = None
 
     reference = _status_label or _title_label
+    used_fallback_label = False
     if not base and reference is not None:
+        used_fallback_label = True
         try:
             base = reference.cget("background")
         except tk.TclError:
@@ -257,6 +294,13 @@ def _bar_track_color() -> str:
     # call - so _frame works even when there's no Label to read from yet.
     resolver = reference or _frame
     if not base or resolver is None:
+        if not _theme_debug_logged:
+            _theme_debug_logged = True
+            logger.info(
+                "Bar track colour diagnostic: theme.current=%r, resolved base=%r, "
+                "used_fallback_label=%s, resolver=%r -> falling back to static light",
+                current_snapshot, base, used_fallback_label, resolver,
+            )
         return _BAR_TRACK_LIGHT
 
     try:
@@ -271,7 +315,17 @@ def _bar_track_color() -> str:
     def shift(value: int) -> int:
         return max(0, min(255, value + delta))
 
-    return f"#{shift(red):02x}{shift(green):02x}{shift(blue):02x}"
+    result = f"#{shift(red):02x}{shift(green):02x}{shift(blue):02x}"
+
+    if not _theme_debug_logged:
+        _theme_debug_logged = True
+        logger.info(
+            "Bar track colour diagnostic: theme.current=%r, resolved base=%r, "
+            "used_fallback_label=%s, luminance=%.1f -> track=%s",
+            current_snapshot, base, used_fallback_label, luminance, result,
+        )
+
+    return result
 
 
 def _draw_bar(canvas: tk.Canvas, total: int, capacity: Optional[int], colour: str) -> None:

@@ -597,7 +597,23 @@ any of our own widgets having already been recoloured by the time we ask.
 Because bars are first drawn in `_build_bars()` before `theme.update(_frame)`
 has run, `create_plugin_app` redraws every bar once more immediately after
 that call, so the very first paint already reflects the real background
-rather than the pre-theme default. Bar/label
+rather than the pre-theme default.
+
+**Still under investigation as of this writing**: the `theme.current`-direct
+read described above is, on paper, correct and independent of any of this
+plugin's own widget state — but still reported as producing white/light bars
+under a real Dark-theme EDMC install. Two changes landed to help pin this
+down without more guessing: `_theme_update_deep(widget)` recurses
+`theme.update()` through the *entire* widget subtree (confirmed from EDMC's
+actual `theme.py` source that its own `update()` only walks one level of
+`winfo_children()` — nowhere near deep enough for `_frame`'s
+frame→frame→row→label/canvas nesting, so most of this panel's widgets were
+likely never being registered or recoloured by the single top-level call
+this used previously); and `_bar_track_color()` now logs a one-time
+diagnostic line (`theme.current=...`, resolved `base`, whether it fell back
+to a Label, the computed track) via the standard logger, to capture what's
+actually happening in a real session rather than in this plugin's own
+(necessarily simplified) test stubs. Bar/label
 widths (`_BAR_NAME_WIDTH`, `_BAR_VALUE_WIDTH`, `_BAR_WIDTH`) are fixed
 regardless of label length or count magnitude, per this developer's standing
 rule that nothing in a `plugin_app` frame may let variable content widen

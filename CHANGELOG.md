@@ -20,14 +20,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Locker (green), a Carrier Locker bar (violet) *only once a fleet carrier is
   confirmed for that commander*, and a fourth Cargo bar (orange, see below)
   — clicking any bar opens the inventory window, replacing the old
-  **Inventory** button. Bars are drawn on a plain `tk.Canvas` rather than
-  `ttk.Progressbar`, after the latter rendered as an oversized, unthemed
-  white box under EDMC's theming. The bar track colour reads EDMC's own
-  `theme.current['background']` directly, so it correctly renders dark
-  under Dark theme regardless of whether any of this plugin's own widgets
-  have been recoloured yet (two earlier attempts inferred the colour from
-  one of this plugin's own widgets instead, and both still showed
-  light/white bars under Dark in practice).
+  **Inventory** button (a hint line - "Click Inventory Bar to Open
+  Inventory Panel" - was added below the bars once it became clear the
+  button's removal wasn't obviously discoverable). Bars are drawn on a
+  plain `tk.Canvas` rather than `ttk.Progressbar`, after the latter
+  rendered as an oversized, unthemed white box under EDMC's theming.
+  Getting the bar track colour actually correct under Dark theme took
+  several passes: `theme.active`/`theme.THEME_DEFAULT` (mirroring EDMMM)
+  silently evaluated as "always light"; reading a Frame's or a Label's own
+  background back both assumed EDMC's `theme.update()` had already
+  recoloured that specific widget by the time we asked; reading
+  `theme.current['background']` directly sidesteps that but is still
+  showing white in the field as of this writing, so `_bar_track_color()`
+  now also logs a one-time diagnostic line (`theme.current=...`) to pin
+  down what's actually happening at that point in a real session, and
+  `create_plugin_app` now recurses `theme.update()` through the *entire*
+  widget subtree itself (EDMC's own `update()` only walks one level of
+  children, confirmed from its source - nowhere near deep enough for this
+  panel's nested frame/row/label/canvas structure).
 - **Ship & SRV cargo-hold tracking (scope extension).** A new `cargo.py`
   module tracks which vehicle (ship, on foot, or SRV) the commander
   currently occupies from `Embark`/`Disembark`/`LaunchSRV`/`DockSRV` journal
