@@ -202,7 +202,15 @@ def create_plugin_app(
     # - this showed up in practice as a stray white box trailing the title.
     # Sizing every container to its natural content width sidesteps that
     # regardless of the exact cause.
-    header = tk.Frame(_frame, cursor="hand2")
+    # No cursor= here: EDMC's theme.update() routes any widget with a custom
+    # cursor through a branch that also sets -foreground, assuming an Entry/
+    # Label-like widget - a plain Frame has no -foreground option at all, so
+    # that branch throws (logged, caught, harmless to EDMC) and, worse, never
+    # reaches the -background assignment later in the same branch, leaving
+    # the Frame's own background permanently untouched by the theme. The
+    # hand cursor lives on _title_label (a Label - safe) instead; the header
+    # stays clickable everywhere via the <Button-1> binding regardless.
+    header = tk.Frame(_frame)
     header.grid(row=0, column=0, sticky=tk.W)
     header.bind("<Button-1>", lambda _e: _toggle_collapsed())
 
@@ -400,10 +408,16 @@ def _build_bars(parent: tk.Frame) -> None:
     _bar_rows = {}
 
     for grid_row, key in enumerate(BAR_ORDER):
-        row = tk.Frame(bars, cursor="hand2")
+        # No cursor= on the row Frame or the bar Canvas - see the note by
+        # header's own creation above; neither has a -foreground option, so
+        # EDMC's theme system throws trying to set one on them. The Labels
+        # carry the hand cursor instead, which still covers most of the row.
+        row = tk.Frame(bars)
         row.grid(row=grid_row, column=0, sticky=tk.W, pady=1)
 
-        name_label = tk.Label(row, text=BAR_DEFAULT_LABELS.get(key, ""), width=_BAR_NAME_WIDTH, anchor=tk.W)
+        name_label = tk.Label(
+            row, text=BAR_DEFAULT_LABELS.get(key, ""), width=_BAR_NAME_WIDTH, anchor=tk.W, cursor="hand2",
+        )
         name_label.pack(side=tk.LEFT)
 
         bar = tk.Canvas(
@@ -412,7 +426,7 @@ def _build_bars(parent: tk.Frame) -> None:
         )
         bar.pack(side=tk.LEFT, padx=(4, 4))
 
-        value_label = tk.Label(row, text="", width=_BAR_VALUE_WIDTH, anchor=tk.W)
+        value_label = tk.Label(row, text="", width=_BAR_VALUE_WIDTH, anchor=tk.W, cursor="hand2")
         value_label.pack(side=tk.LEFT)
 
         for widget in (row, name_label, bar, value_label):
@@ -645,7 +659,7 @@ def _build_output_format(frame: nb.Frame, *, start_row: int) -> int:
     row += 1
 
     _message_format_var = tk.StringVar(value=message_format())
-    nb.Entry(frame, textvariable=_message_format_var, width=55).grid(
+    nb.EntryMenu(frame, textvariable=_message_format_var, width=55).grid(
         row=row, column=0, sticky=tk.W, padx=10,
     )
     row += 1
@@ -729,7 +743,7 @@ def _build_overlay_bars(
     anchor_row.grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 2))
     nb.Label(anchor_row, text="Overlay panel anchor:").pack(side=tk.LEFT)
     _overlay_anchor_var = tk.StringVar(value=overlay_anchor())
-    nb.Entry(
+    nb.EntryMenu(
         anchor_row, textvariable=_overlay_anchor_var, width=8,
         state=tk.NORMAL if is_modern_overlay else tk.DISABLED,
     ).pack(side=tk.LEFT, padx=(4, 0))
@@ -760,9 +774,9 @@ def _build_overlay_position(frame: nb.Frame, *, start_row: int) -> int:
     position = nb.Frame(frame)
     position.grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 2))
     nb.Label(position, text="Overlay position — X:").pack(side=tk.LEFT)
-    nb.Entry(position, textvariable=_overlay_x_var, width=6).pack(side=tk.LEFT, padx=(4, 10))
+    nb.EntryMenu(position, textvariable=_overlay_x_var, width=6).pack(side=tk.LEFT, padx=(4, 10))
     nb.Label(position, text="Y:").pack(side=tk.LEFT)
-    nb.Entry(position, textvariable=_overlay_y_var, width=6).pack(side=tk.LEFT, padx=(4, 0))
+    nb.EntryMenu(position, textvariable=_overlay_y_var, width=6).pack(side=tk.LEFT, padx=(4, 0))
     row += 1
 
     nb.Label(
@@ -889,7 +903,7 @@ def _add_loadout_row(frame: nb.Frame, row: int, loadout_id: str, record: dict) -
         var = tk.StringVar(value=initial)
         _override_vars[(loadout_id, category)] = var
         _override_defaults[(loadout_id, category)] = default_value
-        nb.Entry(fields, textvariable=var, width=6).grid(row=0, column=col * 3 + 1, sticky=tk.W)
+        nb.EntryMenu(fields, textvariable=var, width=6).grid(row=0, column=col * 3 + 1, sticky=tk.W)
 
         if default_value is None:
             hint = nb.Label(fields, text="(no default — enter observed value)")

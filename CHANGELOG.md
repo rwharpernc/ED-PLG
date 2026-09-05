@@ -25,6 +25,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   locker capacity bars" preference becomes the new Ship Locker toggle's own
   default, so upgrading doesn't silently turn it off.
 
+### Fixed
+
+- **The Settings tab silently failed to open at all.** `ui.py` called
+  `nb.Entry(...)` in five places (the Pillage message template, Overlay
+  X/Y, and every suit capacity override field) — a class that has never
+  existed in EDMC's real `myNotebook` module (only `EntryMenu` does).
+  EDMC's plugin loader caught the resulting `AttributeError` and logged it
+  rather than crashing, so nothing on the main panel hinted anything was
+  wrong; only opening **File → Settings → ED-PLG** surfaced it (as no tab
+  at all). All five call sites now use `nb.EntryMenu`.
+- **A logged (but real) `theme.update()` failure on every panel refresh.**
+  The header and each bar row were plain `tk.Frame`s with a custom
+  `cursor="hand2"` for the click-to-collapse/click-to-open hint. EDMC's
+  theme system routes any widget with a non-default cursor through a
+  branch that assumes a `-foreground` option exists (for Label/Entry-like
+  widgets) — a Frame has no such option, so it threw on every theme pass,
+  and critically the exception aborted that same branch's `-background`
+  assignment too, meaning the header and bar rows' own backgrounds were
+  never actually themed by EDMC at all. The cursor now lives only on the
+  Labels inside each row/header (which do have `-foreground`), leaving the
+  Frames without a custom cursor.
+- Added a faithful-enough replica of EDMC's real `theme.py`
+  `Theme.update()`/`_update_widget()` branching and `myNotebook`'s actual
+  class list (no invented `Entry`) to the test stubs, so both of the above
+  now fail loudly in the smoke suite instead of only in production — the
+  previous stubs (a no-op `theme.update()`, a stub `myNotebook.Entry` that
+  doesn't exist for real) had been silently hiding this exact class of bug.
+
 ## [1.2.0] - 2026-09-05
 
 ### Added

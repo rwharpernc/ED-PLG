@@ -1059,6 +1059,17 @@ rendering specifically needs a fake `edmcoverlay` module too (a plain
 list a test can assert against) - real installs vary in exactly what they
 send back, but the calls `PillageOverlay` itself makes are what matters here.
 
+**Stub fidelity matters as much as coverage.** A `myNotebook`/`theme` stub
+that's a convenient simplification rather than an accurate replica of
+EDMC's real internals will pass every test while the real thing crashes -
+this happened for real: an invented `myNotebook.Entry` (EDMC only ever had
+`EntryMenu`) and a no-op `theme.update()` (real EDMC's throws
+`TclError: unknown option "-foreground"` for a Frame/Canvas with a custom
+`cursor=`) both hid genuine bugs from the smoke suite until they broke the
+Settings tab in production. When a real-log bug reveals a stub gap like
+this, fix the stub itself so the same class of regression fails in the test
+suite next time, not just the immediate symptom.
+
 ## 12. Dependencies
 
 | Dependency | Required for | Notes |
