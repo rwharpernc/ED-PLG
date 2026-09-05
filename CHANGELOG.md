@@ -46,12 +46,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never actually themed by EDMC at all. The cursor now lives only on the
   Labels inside each row/header (which do have `-foreground`), leaving the
   Frames without a custom cursor.
-- Added a faithful-enough replica of EDMC's real `theme.py`
-  `Theme.update()`/`_update_widget()` branching and `myNotebook`'s actual
-  class list (no invented `Entry`) to the test stubs, so both of the above
-  now fail loudly in the smoke suite instead of only in production — the
-  previous stubs (a no-op `theme.update()`, a stub `myNotebook.Entry` that
-  doesn't exist for real) had been silently hiding this exact class of bug.
+- **The Settings tab crashed again immediately after the fix above** —
+  fixing the `nb.Entry` bug let `create_prefs` run further and hit a third,
+  previously-masked bug: every `nb.Frame()` in the Settings tab that then
+  `pack()`s its own children (`bars_row`, `anchor_row`, `position`,
+  `categories_row` — one new this release, three pre-existing) crashed
+  with `TclError: cannot use geometry manager pack ... already has slaves
+  managed by grid`. Real EDMC's `myNotebook.Frame.__init__` unconditionally
+  creates and `grid()`-manages an internal "top spacer" child on *every*
+  instance; Tk refuses to mix `pack()` and `grid()` for the same parent's
+  children, so any `nb.Frame()` used as a `pack()`-based row was broken the
+  instant its first real child was added — meaning the Settings tab's
+  Overlay position, Overlay panel anchor, and Announce-categories rows (all
+  pre-existing, unrelated to this release) had likely never rendered
+  successfully either, just never reached because `nb.Entry` failed first.
+  A new `_nb_row()` helper strips that spacer immediately after creating
+  the frame, and all five `pack()`-based rows now use it.
+- Rewrote the `myNotebook` and `theme` test stubs to faithfully replicate
+  the real internals above (the actual spacer-injecting `Frame.__init__`,
+  the real `Theme.update()`/`_update_widget()` branching, no invented
+  `Entry` class) instead of convenient simplifications, and verified each
+  reproduces its real bug's exact error message before trusting the fix —
+  three real Settings-tab-breaking bugs in a row had been invisible to the
+  smoke suite because the stubs it ran against didn't behave like EDMC.
 
 ## [1.2.0] - 2026-09-05
 

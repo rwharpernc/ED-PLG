@@ -586,6 +586,31 @@ def _clear_updated_state() -> None:
             pass  # Main window was closed before the timer fired.
 
 
+def _nb_row(parent: nb.Frame) -> nb.Frame:
+    """
+    An `nb.Frame` meant to hold a single row of `pack()`-managed widgets
+    side by side (a Label next to an Entry/Checkbuttons).
+
+    Real EDMC's `myNotebook.Frame.__init__` unconditionally creates and
+    `grid()`-manages an internal "top spacer" child on *every* instance -
+    fine for a frame whose own children are laid out with `grid()` (like
+    this tab's own outer `frame`), but Tk refuses to mix `pack()` and
+    `grid()` for the same parent's children, so a plain `nb.Frame()` used
+    as a `pack()`-based row crashes (`TclError`) the instant its first real
+    child is added - `plugin_prefs` failing outright, with nothing on the
+    main panel hinting why. This is why `create_prefs` never reached its
+    own `nb.Entry`-vs-`EntryMenu` bug in some sessions and did in others:
+    whichever failure sits earlier in the function masks everything after
+    it. Removing that one spacer child immediately frees the frame to take
+    `pack()`-managed children safely, while keeping `nb.Frame`'s ttk styling
+    (`nb.TFrame`) intact for everything else.
+    """
+    row = nb.Frame(parent)
+    for child in row.winfo_children():
+        child.destroy()
+    return row
+
+
 def create_prefs(
     parent: nb.Notebook,
     overlay_available: bool,
@@ -716,7 +741,7 @@ def _build_overlay_bars(
     _overlay_bar_vars = {}
     state = tk.NORMAL if overlay_available else tk.DISABLED
 
-    bars_row = nb.Frame(frame)
+    bars_row = _nb_row(frame)
     bars_row.grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 2))
     for key in BAR_ORDER:
         var = tk.BooleanVar(value=key in enabled)
@@ -739,7 +764,7 @@ def _build_overlay_bars(
     ).grid(row=row, column=0, sticky=tk.W, padx=10, pady=(2, 10))
     row += 1
 
-    anchor_row = nb.Frame(frame)
+    anchor_row = _nb_row(frame)
     anchor_row.grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 2))
     nb.Label(anchor_row, text="Overlay panel anchor:").pack(side=tk.LEFT)
     _overlay_anchor_var = tk.StringVar(value=overlay_anchor())
@@ -771,7 +796,7 @@ def _build_overlay_position(frame: nb.Frame, *, start_row: int) -> int:
     _overlay_x_var = tk.StringVar(value=str(x))
     _overlay_y_var = tk.StringVar(value=str(y))
 
-    position = nb.Frame(frame)
+    position = _nb_row(frame)
     position.grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 2))
     nb.Label(position, text="Overlay position — X:").pack(side=tk.LEFT)
     nb.EntryMenu(position, textvariable=_overlay_x_var, width=6).pack(side=tk.LEFT, padx=(4, 10))
@@ -800,7 +825,7 @@ def _build_announce_categories(frame: nb.Frame, *, start_row: int) -> int:
     enabled = announced_categories()
     _announce_vars = {}
 
-    categories_row = nb.Frame(frame)
+    categories_row = _nb_row(frame)
     categories_row.grid(row=row, column=0, sticky=tk.W, padx=10, pady=(0, 10))
     for category in TRACKED_CATEGORIES:
         var = tk.BooleanVar(value=category in enabled)
@@ -884,7 +909,7 @@ def _add_loadout_row(frame: nb.Frame, row: int, loadout_id: str, record: dict) -
     defaults = suit.default_capacity(suit_key, bool(record.get("has_capacity_mod")))
     overrides = record.get("overrides", {})
 
-    fields = nb.Frame(frame)
+    fields = _nb_row(frame)
     fields.grid(row=row, column=0, columnspan=2, sticky=tk.W, padx=20, pady=(0, 6))
 
     for col, category in enumerate(TRACKED_CATEGORIES):

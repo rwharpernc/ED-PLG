@@ -525,6 +525,7 @@ Thread-safe UI updates (called only from `journal_entry` on main thread):
 ```python
 create_plugin_app(parent: tk.Frame, on_show_inventory: Callable[[], None]) -> tk.Frame
 create_prefs(parent: nb.Notebook, overlay_available: bool, sound_available: bool, is_modern_overlay: bool, cmdr: str) -> nb.Frame
+_nb_row(parent: nb.Frame) -> nb.Frame            # an nb.Frame safe to pack() children into - see below
 overlay_enabled() -> bool
 overlay_position() -> Tuple[int, int]           # clamped to MAX_ORIGIN_X/Y
 overlay_enabled_bars() -> FrozenSet[str]         # which of overlay.BAR_ORDER draw on the overlay (all off by default)
@@ -694,6 +695,21 @@ before this was split into per-bar toggles doesn't have it silently turn off
 on upgrade. `_build_overlay_bars` builds one `nb.Checkbutton` per
 `BAR_ORDER` entry into `_overlay_bar_vars: Dict[str, tk.BooleanVar]`;
 `save_prefs` writes each back to its own config key.
+
+`_nb_row(parent)` returns an `nb.Frame` with its children laid out via
+`pack()` (a Label next to an Entry/Checkbuttons, side by side) rather than
+`grid()`. This is necessary, not stylistic: real EDMC's
+`myNotebook.Frame.__init__` unconditionally creates and `grid()`-manages an
+internal "top spacer" child on *every* instance, and Tk refuses to mix
+`pack()` and `grid()` for the same parent's children - a bare `nb.Frame()`
+used as a `pack()`-based row crashes the instant its first real child is
+added. `_nb_row()` destroys that one spacer child immediately after
+construction, which frees the frame for `pack()` while leaving `nb.Frame`'s
+own ttk styling (`nb.TFrame`) intact. All five `pack()`-based rows in this
+file (`bars_row`, `anchor_row`, `position`, `categories_row`,
+`_add_loadout_row`'s per-loadout `fields`) use it; `frame` itself (the
+tab's own outer container) does not, since its own children are laid out
+with `grid()` and so are unaffected by the spacer either way.
 
 Config keys:
 
@@ -1062,13 +1078,22 @@ send back, but the calls `PillageOverlay` itself makes are what matters here.
 **Stub fidelity matters as much as coverage.** A `myNotebook`/`theme` stub
 that's a convenient simplification rather than an accurate replica of
 EDMC's real internals will pass every test while the real thing crashes -
-this happened for real: an invented `myNotebook.Entry` (EDMC only ever had
-`EntryMenu`) and a no-op `theme.update()` (real EDMC's throws
+this happened for real, three times in a row, each one masking the next
+until the previous was fixed: an invented `myNotebook.Entry` (EDMC only
+ever had `EntryMenu`); a no-op `theme.update()` (real EDMC's throws
 `TclError: unknown option "-foreground"` for a Frame/Canvas with a custom
-`cursor=`) both hid genuine bugs from the smoke suite until they broke the
-Settings tab in production. When a real-log bug reveals a stub gap like
-this, fix the stub itself so the same class of regression fails in the test
-suite next time, not just the immediate symptom.
+`cursor=`); and a bare `myNotebook.Frame` with no `__init__` (real EDMC's
+unconditionally `grid()`-manages an internal "top spacer" child on every
+instance, so an `nb.Frame()` a plugin then `pack()`s children into crashes
+with `TclError: cannot use geometry manager pack ... already has slaves
+managed by grid` the instant the first child is added - see `_nb_row()` in
+§6.6). All three hid genuine bugs from the smoke suite until they broke the
+Settings tab in production, each new fix only revealing the next because
+`create_prefs` never ran far enough to hit it before. When a real-log bug
+reveals a stub gap like this, fix the stub itself so the same class of
+regression fails in the test suite next time, not just the immediate
+symptom - and verify the fixed stub actually reproduces the real error
+message before trusting it.
 
 ## 12. Dependencies
 
